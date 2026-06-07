@@ -1,0 +1,28 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/web/index.html"
+    },
+    {
+      "source": "/index.html",
+      "destination": "/web/index.html"
+    },
+    {
+      "source": "/vault.html",
+      "destination": "/web/vault.html"
+    },
+    {
+      "source": "/styles.css",
+      "destination": "/web/styles.css"
+    },
+    {
+      "source": "/home.js",
+      "destination": "/web/home.js"
+    },
+    {
+      "source": "/app.js",
+      "destination": "/web/app.js"
+    }
+  ]
+}
