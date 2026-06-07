@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>App | Agent Spending Vault</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail" aria-label="Workspace">
+        <a class="brand" href="./index.html" aria-label="Agent Vault home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>
+            <span class="eyebrow">ARC.RUNTIME</span>
+            <strong>Agent Vault</strong>
+          </span>
+        </a>
+        <nav class="nav" aria-label="Application sections">
+          <a class="active" href="#vault">Vault</a>
+          <a href="#policy">Policy</a>
+          <a href="#payments">Payments</a>
+          <a href="#trail">Trail</a>
+        </nav>
+        <section class="vault-switcher" aria-label="Vault selector" data-tour="vault-switcher">
+          <div class="switcher-heading">
+            <span class="label">Vaults</span>
+            <button id="createVault" class="small-button" type="button">New</button>
+          </div>
+          <div id="vaultList" class="vault-list"></div>
+        </section>
+        <div class="network-panel">
+          <span class="label">Network</span>
+          <strong>Arc Testnet</strong>
+          <span>Chain ID 5042002</span>
+          <label class="network-field">
+            Factory
+            <input id="factoryAddress" name="factoryAddress" placeholder="0x..." autocomplete="off" />
+          </label>
+          <button id="saveFactory" class="small-button" type="button">Save factory</button>
+          <button id="switchNetwork" class="small-button" type="button">Switch</button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Control plane</span>
+            <h1>Configure agent spending in one place</h1>
+            <p class="page-lede">
+              Select a vault, define policy, test a payment, and read the trail without leaving the workspace.
+            </p>
+          </div>
+          <div class="top-actions" data-tour="wallet">
+            <span id="modeBadge" class="status-pill">Local simulation</span>
+            <button id="connectWallet" class="primary-button" type="button">Connect wallet</button>
+          </div>
+        </header>
+
+        <section class="workspace-strip" aria-label="Active vault summary" data-tour="summary">
+          <div>
+            <span class="eyebrow">Active vault</span>
+            <strong id="activeVaultName">Research Operator</strong>
+          </div>
+          <div>
+            <span class="eyebrow">Vaults</span>
+            <strong id="vaultCount">2 total</strong>
+          </div>
+          <div>
+            <span class="eyebrow">Policy</span>
+            <strong id="vaultPolicyState">Live</strong>
+          </div>
+          <div>
+            <span class="eyebrow">Mode</span>
+            <strong id="vaultMode">Simulation</strong>
+          </div>
+        </section>
+
+        <section class="hero-band" id="vault">
+          <div class="vault-visual" aria-hidden="true">
+            <div class="arc-line line-a"></div>
+            <div class="arc-line line-b"></div>
+            <div class="arc-node node-a"></div>
+            <div class="arc-node node-b"></div>
+            <div class="arc-node node-c"></div>
+            <div class="flow-label flow-a">$0.42</div>
+            <div class="flow-label flow-b">POLICY OK</div>
+            <div class="flow-label flow-c">TX FINAL</div>
+          </div>
+          <div class="vault-summary">
+            <span class="eyebrow">Vault balance</span>
+            <div class="balance-row">
+              <strong id="vaultBalance">25.00</strong>
+              <span>USDC</span>
+            </div>
+            <div class="metric-grid">
+              <div>
+                <span>Spent today</span>
+                <strong id="spentToday">3.30 USDC</strong>
+              </div>
+              <div>
+                <span>Available</span>
+                <strong id="availableToday">11.70 USDC</strong>
+              </div>
+              <div>
+                <span>Max action</span>
+                <strong id="maxAction">2.00 USDC</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="content-grid three" id="policy" data-tour="policy">
+          <form class="panel" id="vaultForm">
+            <div class="panel-heading">
+              <span class="eyebrow">Step 1</span>
+              <h2>Vault details</h2>
+            </div>
+            <label>
+              Agent name
+              <input id="agentName" name="agentName" value="Research Operator" />
+            </label>
+            <label>
+              Agent signer
+              <input id="agentSigner" name="agentSigner" value="0x9A7b...A31f" />
+            </label>
+            <button class="primary-button wide" type="submit">Save vault</button>
+          </form>
+
+          <div class="panel" data-tour="treasury">
+            <div class="panel-heading">
+              <span class="eyebrow">Treasury</span>
+              <h2>Fund and close</h2>
+              <p>Deposit USDC, withdraw unused funds, or delete an empty vault.</p>
+            </div>
+            <label>
+              Deposit amount
+              <input id="depositAmount" name="depositAmount" type="number" min="0.01" step="0.01" value="5" />
+            </label>
+            <div class="quick-actions" aria-label="Deposit presets">
+              <button class="small-button" type="button" data-deposit-preset="5">+5</button>
+              <button class="small-button" type="button" data-deposit-preset="25">+25</button>
+              <button class="small-button" type="button" data-deposit-preset="100">+100</button>
+            </div>
+            <button id="depositFunds" class="primary-button wide" type="button">Deposit USDC</button>
+            <label>
+              Withdraw amount
+              <input id="withdrawAmount" name="withdrawAmount" type="number" min="0.01" step="0.01" value="5" />
+            </label>
+            <div class="button-row">
+              <button id="withdrawFunds" class="secondary-button" type="button">Withdraw</button>
+              <button id="withdrawAllFunds" class="small-button" type="button">Withdraw all</button>
+            </div>
+            <div class="treasury-balance">
+              <span>Current balance</span>
+              <strong id="treasuryBalance">25.00 USDC</strong>
+            </div>
+            <div class="danger-zone">
+              <span class="eyebrow">Vault lifecycle</span>
+              <p id="deleteVaultHint">Withdraw all funds before deleting this vault.</p>
+              <button id="deleteVault" class="danger-button wide" type="button">Delete vault</button>
+            </div>
+          </div>
+
+          <form class="panel" id="policyForm">
+            <div class="panel-heading">
+              <span class="eyebrow">Step 2</span>
+              <h2>Spend policy</h2>
+            </div>
+            <label>
+              Max spend per action
+              <input id="maxSpend" name="maxSpend" type="number" min="0" step="0.01" value="2" />
+            </label>
+            <label>
+              Daily limit
+              <input id="dailyLimit" name="dailyLimit" type="number" min="0" step="0.01" value="15" />
+            </label>
+            <label>
+              Approved recipient
+              <input id="recipientInput" name="recipientInput" placeholder="0x recipient address" />
+            </label>
+            <button class="secondary-button wide" type="submit">Update policy</button>
+            <div class="approved-services">
+              <span class="eyebrow">Approved services</span>
+              <div id="recipientList" class="recipient-list"></div>
+            </div>
+          </form>
+        </section>
+
+        <section class="payments-band" id="payments" data-tour="payments">
+          <form class="payment-form" id="paymentForm">
+            <div class="panel-heading">
+              <span class="eyebrow">Test harness</span>
+              <h2>Simulate agent spend</h2>
+              <p>
+                This panel is for testing the policy flow before the agent runs on its own. In production,
+                the agent signer or backend wallet initiates this same onchain request.
+              </p>
+            </div>
+            <label>
+              Service provider
+              <select id="paymentRecipient" name="paymentRecipient"></select>
+            </label>
+            <label>
+              Requested spend
+              <input id="paymentAmount" name="paymentAmount" type="number" min="0.01" step="0.01" value="0.42" />
+            </label>
+            <label>
+              Agent reason
+              <input id="paymentReason" name="paymentReason" value="Buy enriched company data" />
+            </label>
+            <div class="button-row">
+              <button class="primary-button" type="submit">Run policy check</button>
+              <button id="pauseVault" class="danger-button" type="button">Pause vault</button>
+            </div>
+          </form>
+
+          <div class="decision-panel">
+            <div class="panel-heading">
+              <span class="eyebrow">Policy engine</span>
+              <h2 id="decisionTitle">Ready</h2>
+            </div>
+            <p id="decisionText">Approved recipients and spend limits are active.</p>
+            <div class="rule-stack">
+              <div><span>Recipient allowlist</span><strong id="recipientRule">2 active</strong></div>
+              <div><span>Per-action ceiling</span><strong id="perActionRule">2.00 USDC</strong></div>
+              <div><span>Daily budget</span><strong id="dailyRule">15.00 USDC</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="trail-band" id="trail" data-tour="trail">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Activity</span>
+              <h2>Activity log</h2>
+            </div>
+            <div class="button-row">
+              <button id="toggleFullLog" class="small-button" type="button">View full log</button>
+              <button id="clearTrail" class="small-button" type="button">Clear</button>
+            </div>
+          </div>
+          <div id="activityLog" class="activity-log" aria-live="polite"></div>
+          <div id="fullLogPanel" class="embedded-full-log" hidden>
+            <div id="fullActivityLog" class="full-activity-log"></div>
+            <div class="log-pagination" aria-label="Activity log pagination">
+              <button id="prevLogPage" class="small-button" type="button">Previous</button>
+              <span id="logPageLabel">Page 1 of 1</span>
+              <button id="nextLogPage" class="small-button" type="button">Next</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <button id="openTour" class="tour-launcher" type="button">How to use</button>
+    <div id="tourOverlay" class="tour-overlay" aria-hidden="true">
+      <div id="tourSpotlight" class="tour-spotlight"></div>
+      <section id="tourCard" class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tourTitle">
+        <span id="tourStepLabel" class="eyebrow">Step 1 of 6</span>
+        <h2 id="tourTitle">Start with a vault</h2>
+        <p id="tourText">Create one or more agent vaults and switch between them from the left rail.</p>
+        <div class="tour-progress" id="tourProgress" aria-hidden="true"></div>
+        <div class="tour-actions">
+          <button id="prevTour" class="secondary-button" type="button">Prev</button>
+          <button id="skipTour" class="small-button" type="button">Skip</button>
+          <button id="nextTour" class="primary-button" type="button">Next</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="confirmOverlay" class="confirm-overlay" aria-hidden="true">
+      <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <span id="confirmEyebrow" class="eyebrow">Confirm action</span>
+        <h2 id="confirmTitle">Are you sure?</h2>
+        <p id="confirmText">This action needs confirmation.</p>
+        <div class="button-row">
+          <button id="cancelConfirm" class="secondary-button" type="button">Cancel</button>
+          <button id="acceptConfirm" class="danger-button" type="button">Confirm</button>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

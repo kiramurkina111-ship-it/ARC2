@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Spending Vault on Arc</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="landing">
+    <header class="site-header">
+      <a class="brand" href="./index.html" aria-label="Agent Vault home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>
+          <span class="eyebrow">ARC.RUNTIME</span>
+          <strong>Agent Vault</strong>
+        </span>
+      </a>
+      <a class="primary-button" href="./vault.html">Launch app</a>
+    </header>
+
+    <main>
+      <section class="landing-hero">
+        <canvas id="settlementCanvas" aria-hidden="true"></canvas>
+        <div class="hero-copy">
+          <span class="eyebrow">USDC policy layer for autonomous work</span>
+          <h1>Agent Spending Vault</h1>
+          <p>
+            Give an AI agent a real USDC budget on Arc. It can pay approved services,
+            stay inside your rules, and leave a readable onchain settlement trail.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-button" href="./vault.html">Create a vault</a>
+          </div>
+        </div>
+        <div class="hero-terminal" aria-label="Live policy preview">
+          <span class="eyebrow">Policy decision</span>
+          <div class="terminal-line"><span>agent</span> requests 0.42 USDC</div>
+          <div class="terminal-line"><span>recipient</span> Verified Data API</div>
+          <div class="terminal-line"><span>rule</span> max 2.00 USDC per action</div>
+          <div class="terminal-line ok"><span>result</span> executed on Arc</div>
+        </div>
+      </section>
+
+      <section class="explain-band">
+        <div class="section-intro">
+          <span class="eyebrow">What it is</span>
+          <h2>A control plane for AI agents with money</h2>
+          <p>
+            The vault sits between the user, the agent, and service providers.
+            Safe payments execute immediately. Risky actions become approval requests.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <span>01</span>
+            <h3>Fund</h3>
+            <p>Deposit USDC into an agent-owned work budget on Arc Testnet.</p>
+          </article>
+          <article class="feature-card">
+            <span>02</span>
+            <h3>Constrain</h3>
+            <p>Set recipients, per-action limits, daily caps, and pause controls.</p>
+          </article>
+          <article class="feature-card">
+            <span>03</span>
+            <h3>Settle</h3>
+            <p>Every payment gets a metadata hash, policy decision, and transaction trail.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="flow-band">
+        <div class="flow-step">
+          <span class="step-index">1</span>
+          <strong>User sets budget</strong>
+          <p>25 USDC, approved vendors, 2 USDC max per action.</p>
+        </div>
+        <div class="flow-step">
+          <span class="step-index">2</span>
+          <strong>Agent requests spend</strong>
+          <p>The agent tries to buy data, verification, or compute.</p>
+        </div>
+        <div class="flow-step">
+          <span class="step-index">3</span>
+          <strong>Vault enforces policy</strong>
+          <p>Allowed payments execute. Risky ones wait for human approval.</p>
+        </div>
+        <div class="flow-step">
+          <span class="step-index">4</span>
+          <strong>Trail stays readable</strong>
+          <p>Users see who was paid, why, and how the policy decided.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="./home.js"></script>
+  </body>
+</html>
