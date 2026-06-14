@@ -29,12 +29,17 @@ const VAULT_ABI = [
   "function availableToday() view returns (uint256)",
   "function paused() view returns (bool)",
   "function balance() view returns (uint256)",
+  "function nextRequestId() view returns (uint256)",
+  "function paymentRequests(uint256 requestId) view returns (address recipient,uint256 amount,bytes32 metadataHash,uint8 status,uint64 createdAt,uint64 decidedAt)",
   "function setAgent(address newAgent)",
   "function setPolicy(uint256 maxSpendPerTx,uint256 dailyLimit)",
   "function setRecipientAllowed(address recipient,bool allowed)",
   "function deposit(uint256 amount)",
   "function withdraw(uint256 amount)",
   "function initiatePayment(address recipient,uint256 amount,bytes32 metadataHash) returns (uint256 requestId,bool executed)",
+  "function approveRequest(uint256 requestId)",
+  "function rejectRequest(uint256 requestId)",
+  "function cancelRequest(uint256 requestId)",
   "function pause()",
   "function unpause()",
   "event Deposited(address indexed from,uint256 amount)",
@@ -43,6 +48,9 @@ const VAULT_ABI = [
   "event RecipientPolicyChanged(address indexed recipient,bool allowed)",
   "event PaymentExecuted(address indexed recipient,uint256 amount,bytes32 metadataHash)",
   "event PaymentRequested(uint256 indexed requestId,address indexed recipient,uint256 amount,bytes32 metadataHash)",
+  "event PaymentApproved(uint256 indexed requestId,address indexed owner)",
+  "event PaymentRejected(uint256 indexed requestId,address indexed owner)",
+  "event PaymentCancelled(uint256 indexed requestId,address indexed caller)",
   "event Paused(address indexed caller)",
   "event Unpaused(address indexed caller)",
 ];
@@ -64,8 +72,12 @@ const DEFAULT_SIM_VAULTS = [
     dailyLimit: 15,
     spentToday: 3.3,
     availableToday: 11.7,
-    recipients: ["Verified Data API", "Compliance Verifier"],
+    recipients: [
+      { name: "Verified Data API", address: "Verified Data API" },
+      { name: "Compliance Verifier", address: "Compliance Verifier" },
+    ],
     paused: false,
+    pendingRequests: [],
     activity: [
       {
         title: "Vault funded",
@@ -77,6 +89,23 @@ const DEFAULT_SIM_VAULTS = [
     ],
   },
 ];
+
+const EMPTY_VAULT = {
+  id: "empty",
+  source: "empty",
+  address: "",
+  agentName: "New Agent Vault",
+  agentSigner: "unassigned",
+  balance: 0,
+  maxSpend: 1,
+  dailyLimit: 5,
+  spentToday: 0,
+  availableToday: 5,
+  recipients: [],
+  paused: false,
+  pendingRequests: [],
+  activity: [],
+};
 
 const TOUR_STEPS = [
   {
@@ -108,6 +137,11 @@ const TOUR_STEPS = [
     target: '[data-tour="payments"]',
     title: "Run a payment",
     text: "Use the test harness to initiate the same onchain payment flow that an agent signer or backend wallet would call.",
+  },
+  {
+    target: '[data-tour="approvals"]',
+    title: "Review risky spend",
+    text: "Payments outside policy become onchain approval requests. The owner can approve or reject them without leaving the app.",
   },
   {
     target: '[data-tour="trail"]',
@@ -156,6 +190,7 @@ function normalizeState(stored) {
   const next = {
     connectedAccount: stored.connectedAccount || null,
     factoryAddress: stored.factoryAddress || DEFAULT_FACTORY_ADDRESS,
+    walletUsdcBalance: Number(stored.walletUsdcBalance || 0),
     activeVaultId: stored.activeVaultId || "",
     fullLogOpen: Boolean(stored.fullLogOpen),
     logPage: Number(stored.logPage || 1),
@@ -187,9 +222,37 @@ function normalizeVault(vault) {
     dailyLimit: Number(vault.dailyLimit || 0),
     spentToday: Number(vault.spentToday || 0),
     availableToday: Number(vault.availableToday ?? Math.max(Number(vault.dailyLimit || 0) - Number(vault.spentToday || 0), 0)),
-    recipients: Array.isArray(vault.recipients) ? vault.recipients : [],
+    recipients: Array.isArray(vault.recipients) ? vault.recipients.map(normalizeRecipient) : [],
     paused: Boolean(vault.paused),
+    pendingRequests: Array.isArray(vault.pendingRequests) ? vault.pendingRequests.map(normalizeRequest) : [],
     activity: Array.isArray(vault.activity) ? vault.activity : [],
+  };
+}
+
+function normalizeRecipient(recipient) {
+  if (typeof recipient === "string") {
+    return {
+      name: ethers.isAddress(recipient) ? shortHash(recipient) : recipient,
+      address: recipient,
+    };
+  }
+
+  const address = recipient?.address || recipient?.value || "";
+  return {
+    name: recipient?.name || (ethers.isAddress(address) ? shortHash(address) : address || "Unnamed recipient"),
+    address,
+  };
+}
+
+function normalizeRequest(request) {
+  return {
+    id: String(request.id || request.requestId || ""),
+    recipient: request.recipient || "",
+    amount: Number(request.amount || 0),
+    metadataHash: request.metadataHash || "",
+    status: Number(request.status || 0),
+    createdAt: Number(request.createdAt || 0),
+    decidedAt: Number(request.decidedAt || 0),
   };
 }
 
@@ -198,9 +261,7 @@ function saveState() {
 }
 
 function activeVault() {
-  if (!Array.isArray(state.vaults) || state.vaults.length === 0) {
-    state.vaults = clone(DEFAULT_SIM_VAULTS);
-  }
+  if (!Array.isArray(state.vaults) || state.vaults.length === 0) return clone(EMPTY_VAULT);
 
   let vault = state.vaults.find((item) => item.id === state.activeVaultId);
   if (!vault) {
@@ -208,6 +269,10 @@ function activeVault() {
     state.activeVaultId = vault.id;
   }
   return vault;
+}
+
+function hasActiveVault() {
+  return Array.isArray(state.vaults) && state.vaults.length > 0 && activeVault().source !== "empty";
 }
 
 function activeMetadata() {
@@ -227,6 +292,7 @@ function syncActiveMetadata() {
   meta.agentName = vault.agentName;
   meta.recipients = vault.recipients;
   meta.activity = vault.activity;
+  meta.pendingRequests = vault.pendingRequests;
 }
 
 function createVaultId() {
@@ -310,9 +376,10 @@ function renderRecipients() {
   if (select) {
     select.innerHTML = "";
     vault.recipients.forEach((recipient) => {
+      const normalized = normalizeRecipient(recipient);
       const option = document.createElement("option");
-      option.value = recipient;
-      option.textContent = ethers.isAddress(recipient) ? shortHash(recipient) : recipient;
+      option.value = normalized.address;
+      option.textContent = recipientDisplay(normalized);
       select.appendChild(option);
     });
   }
@@ -328,22 +395,37 @@ function renderRecipients() {
     }
 
     vault.recipients.forEach((recipient) => {
+      const normalized = normalizeRecipient(recipient);
       const chip = document.createElement("div");
       chip.className = "recipient-chip";
 
       const label = document.createElement("span");
-      label.textContent = ethers.isAddress(recipient) ? shortHash(recipient) : recipient;
+      label.textContent = recipientDisplay(normalized);
 
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "x";
-      remove.title = `Remove ${recipient}`;
-      remove.dataset.recipient = recipient;
+      remove.title = `Remove ${recipientDisplay(normalized)}`;
+      remove.dataset.recipient = normalized.address;
 
       chip.append(label, remove);
       list.appendChild(chip);
     });
   }
+}
+
+function recipientDisplay(recipient) {
+  const normalized = normalizeRecipient(recipient);
+  if (ethers.isAddress(normalized.address)) {
+    return `${normalized.name} · ${shortHash(normalized.address)}`;
+  }
+  return normalized.name || normalized.address;
+}
+
+function recipientAllowed(vault, address) {
+  return (vault.recipients || []).some(
+    (recipient) => normalizeRecipient(recipient).address.toLowerCase() === String(address).toLowerCase(),
+  );
 }
 
 function renderActivity() {
@@ -438,6 +520,14 @@ function renderVaultList() {
   if (!list) return;
 
   list.innerHTML = "";
+  if (!Array.isArray(state.vaults) || state.vaults.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = state.connectedAccount ? "No onchain vaults yet." : "Connect a wallet to load vaults.";
+    list.appendChild(empty);
+    return;
+  }
+
   state.vaults.forEach((vault) => {
     const button = document.createElement("button");
     button.className = `vault-tab${vault.id === state.activeVaultId ? " active" : ""}`;
@@ -455,8 +545,99 @@ function renderVaultList() {
   });
 }
 
+function requestStatusLabel(status) {
+  return ["None", "Pending", "Approved", "Rejected", "Executed", "Cancelled"][Number(status)] || "Unknown";
+}
+
+function requestStateClass(status) {
+  if (Number(status) === 1) return "state-warn";
+  if (Number(status) === 3 || Number(status) === 5) return "state-risk";
+  if (Number(status) === 2 || Number(status) === 4) return "state-ok";
+  return "";
+}
+
+function renderApprovalQueue() {
+  const queue = $("approvalQueue");
+  if (!queue) return;
+
+  const vault = activeVault();
+  const requests = [...(vault.pendingRequests || [])].sort((a, b) => Number(b.id) - Number(a.id));
+  queue.innerHTML = "";
+
+  if (requests.length === 0) {
+    const empty = document.createElement("article");
+    empty.className = "approval-row";
+    empty.innerHTML = '<span class="empty-state">No approval requests yet. Run a payment above the policy limit to create one.</span>';
+    queue.appendChild(empty);
+    return;
+  }
+
+  requests.slice(0, 25).forEach((request) => {
+    const row = document.createElement("article");
+    row.className = "approval-row";
+
+    const id = document.createElement("span");
+    id.className = "approval-id";
+    id.textContent = `#${request.id}`;
+
+    const main = document.createElement("div");
+    main.className = "approval-main";
+    const title = document.createElement("strong");
+    title.className = requestStateClass(request.status);
+    title.textContent = requestStatusLabel(request.status);
+    const recipient = document.createElement("span");
+    recipient.textContent = ethers.isAddress(request.recipient) ? `Recipient ${shortHash(request.recipient)}` : "Unknown recipient";
+    main.append(title, recipient);
+
+    const amount = document.createElement("div");
+    amount.className = "approval-amount";
+    const amountValue = document.createElement("strong");
+    amountValue.textContent = `${formatUsdc(request.amount)} USDC`;
+    const meta = document.createElement("span");
+    meta.className = "approval-meta";
+    meta.textContent = shortHash(request.metadataHash);
+    amount.append(amountValue, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "approval-actions";
+    if (Number(request.status) === 1) {
+      const approve = document.createElement("button");
+      approve.className = "primary-button";
+      approve.type = "button";
+      approve.textContent = "Approve";
+      approve.dataset.requestAction = "approve";
+      approve.dataset.requestId = request.id;
+
+      const reject = document.createElement("button");
+      reject.className = "danger-button";
+      reject.type = "button";
+      reject.textContent = "Reject";
+      reject.dataset.requestAction = "reject";
+      reject.dataset.requestId = request.id;
+
+      const cancel = document.createElement("button");
+      cancel.className = "small-button";
+      cancel.type = "button";
+      cancel.textContent = "Cancel";
+      cancel.dataset.requestAction = "cancel";
+      cancel.dataset.requestId = request.id;
+
+      actions.append(approve, reject, cancel);
+    } else {
+      const done = document.createElement("span");
+      done.className = "approval-meta";
+      done.textContent = "Closed";
+      actions.appendChild(done);
+    }
+
+    row.append(id, main, amount, actions);
+    queue.appendChild(row);
+  });
+}
+
 function render() {
   const vault = activeVault();
+  const hasVault = hasActiveVault();
   const available = Number.isFinite(vault.availableToday)
     ? vault.availableToday
     : Math.max(vault.dailyLimit - vault.spentToday, 0);
@@ -466,16 +647,23 @@ function render() {
   setText("spentToday", `${formatUsdc(vault.spentToday)} USDC`);
   setText("availableToday", `${formatUsdc(available)} USDC`);
   setText("maxAction", `${formatUsdc(vault.maxSpend)} USDC`);
+  const pendingCount = (vault.pendingRequests || []).filter((request) => Number(request.status) === 1).length;
+
   setText("recipientRule", `${vault.recipients.length} active`);
   setText("perActionRule", `${formatUsdc(vault.maxSpend)} USDC`);
   setText("dailyRule", `${formatUsdc(vault.dailyLimit)} USDC`);
   setText("pauseVault", vault.paused ? "Unpause vault" : "Pause vault");
-  setText("activeVaultName", vault.agentName);
+  setText("activeVaultName", hasVault ? vault.agentName : "No vault selected");
   setText("vaultCount", `${state.vaults.length} total`);
-  setText("vaultPolicyState", vault.paused ? "Paused" : "Live");
-  setText("vaultMode", onchain ? "Onchain" : state.connectedAccount ? "Wallet setup" : "Simulation");
+  setText("vaultPolicyState", hasVault ? (vault.paused ? "Paused" : "Live") : "No vault");
+  setText("pendingApprovalCount", `${pendingCount} pending`);
   setText("toggleFullLog", state.fullLogOpen ? "Hide full log" : "View full log");
   setText("treasuryBalance", `${formatUsdc(vault.balance)} USDC`);
+  setText("walletUsdcBalance", state.connectedAccount ? `${formatUsdc(state.walletUsdcBalance)} USDC` : "Connect wallet");
+  setText("factoryStatus", hasFactory() ? `Factory ${shortHash(state.factoryAddress)}` : "Factory missing");
+  setText("ownerRole", state.connectedAccount ? shortHash(state.connectedAccount) : "Connect wallet");
+  setText("agentRole", ethers.isAddress(vault.agentSigner) ? shortHash(vault.agentSigner) : vault.agentSigner);
+  setText("recipientRole", vault.recipients[0] ? recipientDisplay(vault.recipients[0]) : "No recipient");
 
   setValue("factoryAddress", state.factoryAddress);
   setValue("agentName", vault.agentName);
@@ -486,7 +674,7 @@ function render() {
   setText(
     "deleteVaultHint",
     onchain
-      ? "Onchain vaults cannot be deleted in v0.1. Withdraw funds to zero and leave the vault inactive."
+      ? "Onchain vaults cannot be deleted yet. Withdraw funds to zero and archive locally when supported."
       : vault.balance > 0
         ? "Withdraw all funds before deleting this vault."
         : "This vault is empty and can be deleted.",
@@ -497,7 +685,7 @@ function render() {
 
   if (state.connectedAccount) {
     setText("connectWallet", shortHash(state.connectedAccount));
-    setText("modeBadge", hasFactory() ? "Arc onchain" : "Add factory address");
+    setText("modeBadge", hasFactory() ? (hasVault ? "Arc onchain" : "No vault yet") : "Add factory address");
   } else {
     setText("connectWallet", "Connect wallet");
     setText("modeBadge", "Local preview");
@@ -516,8 +704,30 @@ function render() {
     if (deleteButton) deleteButton.disabled = onchain || vault.balance > 0;
   }
 
+  ["vaultForm", "policyForm", "paymentForm"].forEach((formId) => {
+    const form = $(formId);
+    if (!form) return;
+    form.querySelectorAll("button, input, select").forEach((element) => {
+      if (
+        !hasVault &&
+        element.id !== "agentName" &&
+        element.id !== "agentSigner" &&
+        element.id !== "maxSpend" &&
+        element.id !== "dailyLimit"
+      ) {
+        element.disabled = true;
+      }
+    });
+  });
+
+  ["depositFunds", "withdrawFunds", "withdrawAllFunds", "pauseVault", "deleteVault", "refreshRequests"].forEach((id) => {
+    const element = $(id);
+    if (element && !hasVault) element.disabled = true;
+  });
+
   renderVaultList();
   renderRecipients();
+  renderApprovalQueue();
   renderActivity();
   renderFullActivity();
   renderTour();
@@ -766,12 +976,17 @@ async function refreshOnchainVaults() {
   await ensureWallet();
 
   const factory = getFactory(provider);
-  const addresses = await factory.vaultsOf(state.connectedAccount);
+  const usdc = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, provider);
+  const [addresses, walletBalance] = await Promise.all([
+    factory.vaultsOf(state.connectedAccount),
+    usdc.balanceOf(state.connectedAccount),
+  ]);
+  state.walletUsdcBalance = fromUnits(walletBalance);
 
   const onchainVaults = [];
   for (const address of addresses) {
     const vault = getVaultContract(address, provider);
-    const [agent, maxSpend, dailyLimit, spentToday, availableToday, balance, paused] = await Promise.all([
+    const [agent, maxSpend, dailyLimit, spentToday, availableToday, balance, paused, requests] = await Promise.all([
       vault.agent(),
       vault.maxSpendPerTx(),
       vault.dailyLimit(),
@@ -779,6 +994,7 @@ async function refreshOnchainVaults() {
       vault.availableToday(),
       vault.balance(),
       vault.paused(),
+      readVaultRequests(vault),
     ]);
 
     const key = address.toLowerCase();
@@ -797,6 +1013,7 @@ async function refreshOnchainVaults() {
         availableToday: availableToday > 10n ** 30n ? fromUnits(dailyLimit) : fromUnits(availableToday),
         recipients: meta.recipients || [],
         paused,
+        pendingRequests: requests.length > 0 ? requests : meta.pendingRequests || [],
         activity: meta.activity || [],
       }),
     );
@@ -814,6 +1031,32 @@ async function refreshOnchainVaults() {
 
   saveState();
   render();
+}
+
+async function readVaultRequests(vaultContract) {
+  const nextRequestId = Number(await vaultContract.nextRequestId());
+  const firstRequestId = Math.max(1, nextRequestId - 50);
+  const requests = [];
+
+  for (let id = firstRequestId; id < nextRequestId; id += 1) {
+    const request = await vaultContract.paymentRequests(id);
+    const status = Number(request.status ?? request[3] ?? 0);
+    if (status === 0) continue;
+
+    requests.push(
+      normalizeRequest({
+        id,
+        recipient: request.recipient ?? request[0],
+        amount: fromUnits(request.amount ?? request[1]),
+        metadataHash: request.metadataHash ?? request[2],
+        status,
+        createdAt: Number(request.createdAt ?? request[4] ?? 0),
+        decidedAt: Number(request.decidedAt ?? request[5] ?? 0),
+      }),
+    );
+  }
+
+  return requests;
 }
 
 async function saveFactoryAddress() {
@@ -975,7 +1218,7 @@ function deleteActiveVault() {
   if (isOnchainVault(vault)) {
     addActivity({
       title: "Delete unavailable",
-      detail: "Onchain vaults cannot be deleted in v0.1. Withdraw funds and leave the vault inactive.",
+      detail: "Onchain vaults cannot be deleted yet. Withdraw funds and leave the vault inactive.",
       hash: "local",
       state: "warn",
     });
@@ -1025,6 +1268,7 @@ async function updatePolicy(event) {
 
   const vault = activeVault();
   const recipient = $("recipientInput").value.trim();
+  const recipientName = $("recipientNameInput")?.value.trim();
   const maxSpend = Number($("maxSpend").value || 0);
   const dailyLimit = Number($("dailyLimit").value || 0);
   if (maxSpend < 0 || dailyLimit < 0) throw new Error("Policy amounts cannot be negative");
@@ -1042,7 +1286,10 @@ async function updatePolicy(event) {
     });
     await policyTx.wait();
 
-    if (recipient && !vault.recipients.some((item) => item.toLowerCase() === recipient.toLowerCase())) {
+    if (
+      recipient &&
+      !vault.recipients.some((item) => normalizeRecipient(item).address.toLowerCase() === recipient.toLowerCase())
+    ) {
       const allowTx = await contract.setRecipientAllowed(recipient, true);
       addActivity({
         title: "Recipient approval submitted",
@@ -1051,7 +1298,10 @@ async function updatePolicy(event) {
         state: "warn",
       });
       await allowTx.wait();
-      vault.recipients.push(ethers.getAddress(recipient));
+      vault.recipients.push({
+        name: recipientName || shortHash(recipient),
+        address: ethers.getAddress(recipient),
+      });
     }
 
     vault.maxSpend = maxSpend;
@@ -1061,9 +1311,18 @@ async function updatePolicy(event) {
   } else {
     vault.maxSpend = maxSpend;
     vault.dailyLimit = dailyLimit;
-    if (recipient && !vault.recipients.includes(recipient)) vault.recipients.push(recipient);
+    if (
+      recipient &&
+      !vault.recipients.some((item) => normalizeRecipient(item).address.toLowerCase() === recipient.toLowerCase())
+    ) {
+      vault.recipients.push({
+        name: recipientName || (ethers.isAddress(recipient) ? shortHash(recipient) : recipient),
+        address: recipient,
+      });
+    }
   }
 
+  setValue("recipientNameInput", "");
   setValue("recipientInput", "");
   addActivity({
     title: "Policy updated",
@@ -1126,12 +1385,26 @@ async function initiatePayment(event) {
   }
 
   const available = vault.dailyLimit - vault.spentToday;
-  if (vault.paused || !vault.recipients.includes(recipient) || amount > vault.maxSpend || amount > available) {
+  if (vault.paused || !recipientAllowed(vault, recipient) || amount > vault.maxSpend || amount > available) {
+    const requestId = String((vault.pendingRequests || []).length + 1);
+    vault.pendingRequests ||= [];
+    vault.pendingRequests.push(
+      normalizeRequest({
+        id: requestId,
+        recipient,
+        amount,
+        metadataHash: hash,
+        status: 1,
+        createdAt: Math.floor(Date.now() / 1000),
+        decidedAt: 0,
+      }),
+    );
+
     setText("decisionTitle", "Approval required");
-    setText("decisionText", "Payment exceeds preview policy.");
+    setText("decisionText", `Request #${requestId} was queued for owner review.`);
     addActivity({
       title: "Approval requested",
-      detail: `${formatUsdc(amount)} USDC to ${recipient}`,
+      detail: `Request #${requestId}: ${formatUsdc(amount)} USDC to ${recipient}`,
       hash,
       state: "warn",
     });
@@ -1148,6 +1421,23 @@ async function initiatePayment(event) {
     hash,
     state: "ok",
   });
+}
+
+async function runRiskyDemo() {
+  const vault = activeVault();
+  if (!hasActiveVault()) throw new Error("Create or select a vault before running the demo");
+  if (!vault.recipients.length) throw new Error("Add an approved recipient before running the demo");
+
+  const recipient = normalizeRecipient(vault.recipients[0]);
+  const riskyAmount = vault.maxSpend > 0 ? vault.maxSpend + 1 : Math.max(vault.dailyLimit + 1, 1);
+
+  const select = $("paymentRecipient");
+  if (select) select.value = recipient.address;
+  setValue("paymentAmount", riskyAmount);
+  setValue("paymentReason", "Demo: request premium data above policy limit");
+
+  await initiatePayment({ preventDefault() {} });
+  document.querySelector("#approvals")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function parsePaymentOutcome(receipt, vaultAddress) {
@@ -1255,7 +1545,9 @@ async function removeRecipientConfirmed(recipientToRemove) {
     await tx.wait();
   }
 
-  vault.recipients = vault.recipients.filter((recipient) => recipient.toLowerCase() !== recipientToRemove.toLowerCase());
+  vault.recipients = vault.recipients.filter(
+    (recipient) => normalizeRecipient(recipient).address.toLowerCase() !== recipientToRemove.toLowerCase(),
+  );
   syncActiveMetadata();
   addActivity({
     title: "Recipient removed",
@@ -1263,6 +1555,92 @@ async function removeRecipientConfirmed(recipientToRemove) {
     hash: "local",
     state: "warn",
   });
+}
+
+async function refreshRequests() {
+  if (isOnchainVault()) {
+    await refreshOnchainVaults();
+    addActivity({
+      title: "Requests refreshed",
+      detail: "Approval queue synced from Arc Testnet",
+      hash: "local",
+      state: "ok",
+    });
+    return;
+  }
+
+  render();
+}
+
+async function handleRequestAction(event) {
+  const button = event.target.closest("[data-request-action]");
+  if (!button) return;
+
+  const action = button.dataset.requestAction;
+  const requestId = button.dataset.requestId;
+  await runAction(() => executeRequestAction(action, requestId));
+}
+
+async function executeRequestAction(action, requestId) {
+  const vault = activeVault();
+  const request = (vault.pendingRequests || []).find((item) => String(item.id) === String(requestId));
+  if (!request) throw new Error(`Request #${requestId} was not found`);
+
+  if (isOnchainVault(vault)) {
+    await ensureWallet();
+    const contract = getVaultContract(vault.address, signer);
+    let tx;
+
+    if (action === "approve") tx = await contract.approveRequest(requestId);
+    if (action === "reject") tx = await contract.rejectRequest(requestId);
+    if (action === "cancel") tx = await contract.cancelRequest(requestId);
+    if (!tx) throw new Error("Unknown request action");
+
+    addActivity({
+      title: `${capitalize(action)} submitted`,
+      detail: `Request #${requestId} is waiting for Arc Testnet finality`,
+      hash: tx.hash,
+      state: "warn",
+    });
+
+    await tx.wait();
+    await refreshOnchainVaults();
+
+    addActivity({
+      title: requestActionTitle(action),
+      detail: `Request #${requestId} for ${formatUsdc(request.amount)} USDC`,
+      hash: tx.hash,
+      state: action === "reject" || action === "cancel" ? "risk" : "ok",
+    });
+    return;
+  }
+
+  if (action === "approve") {
+    request.status = 4;
+    vault.balance = Math.max(vault.balance - request.amount, 0);
+    vault.spentToday += request.amount;
+  }
+  if (action === "reject") request.status = 3;
+  if (action === "cancel") request.status = 5;
+  request.decidedAt = Math.floor(Date.now() / 1000);
+
+  addActivity({
+    title: requestActionTitle(action),
+    detail: `Request #${requestId} for ${formatUsdc(request.amount)} USDC`,
+    hash: "local",
+    state: action === "reject" || action === "cancel" ? "risk" : "ok",
+  });
+}
+
+function requestActionTitle(action) {
+  if (action === "approve") return "Request approved";
+  if (action === "reject") return "Request rejected";
+  if (action === "cancel") return "Request cancelled";
+  return "Request updated";
+}
+
+function capitalize(value) {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : "";
 }
 
 function applyDepositPreset(event) {
@@ -1295,7 +1673,11 @@ async function createVault() {
     await tx.wait();
     await refreshOnchainVaults();
     const created = state.vaults[state.vaults.length - 1];
-    if (created) state.activeVaultId = created.id;
+    if (created) {
+      state.activeVaultId = created.id;
+      created.agentName = $("agentName")?.value.trim() || created.agentName;
+      syncActiveMetadata();
+    }
     addActivity({
       title: "Vault created",
       detail: `Onchain vault created for ${shortHash(agent)}`,
@@ -1358,18 +1740,21 @@ bind("saveFactory", "click", () => runAction(saveFactoryAddress));
 bind("vaultForm", "submit", (event) => runAction(() => updateVault(event)));
 bind("policyForm", "submit", (event) => runAction(() => updatePolicy(event)));
 bind("paymentForm", "submit", (event) => runAction(() => initiatePayment(event)));
+bind("runRiskyDemo", "click", () => runAction(runRiskyDemo));
 bind("depositFunds", "click", () => runAction(depositFunds));
 bind("withdrawFunds", "click", () => runAction(() => withdrawFunds()));
 bind("withdrawAllFunds", "click", withdrawAllFunds);
 bind("deleteVault", "click", deleteActiveVault);
 bind("pauseVault", "click", () => runAction(togglePause));
 bind("clearTrail", "click", clearTrail);
+bind("refreshRequests", "click", () => runAction(refreshRequests));
 bind("toggleFullLog", "click", () => setFullLog(!state.fullLogOpen));
 bind("prevLogPage", "click", () => changeLogPage(-1));
 bind("nextLogPage", "click", () => changeLogPage(1));
 bind("createVault", "click", () => runAction(createVault));
 bind("vaultList", "click", selectVault);
 bind("recipientList", "click", removeRecipient);
+bind("approvalQueue", "click", handleRequestAction);
 bind("cancelConfirm", "click", closeConfirm);
 bind("acceptConfirm", "click", acceptConfirm);
 bind("confirmOverlay", "click", closeConfirmOnBackdrop);

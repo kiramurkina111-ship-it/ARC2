@@ -479,6 +479,31 @@ button {
   color: var(--white);
 }
 
+.network-status {
+  color: var(--success);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+.network-advanced {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.network-advanced summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.network-advanced[open] {
+  padding-top: 10px;
+  border-top: 1px solid rgba(188, 236, 255, 0.12);
+}
+
 .network-field {
   display: grid;
   gap: 6px;
@@ -556,9 +581,11 @@ button {
 
 .hero-band,
 .payments-band,
+.approval-band,
 .trail-band,
 .content-grid,
 .explain-strip,
+.role-strip,
 .workspace-strip {
   margin-bottom: 24px;
 }
@@ -585,6 +612,39 @@ button {
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.role-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.role-strip div {
+  display: grid;
+  gap: 8px;
+  min-height: 118px;
+  padding: 16px;
+  background: rgba(9, 26, 42, 0.86);
+}
+
+.role-strip strong {
+  overflow: hidden;
+  color: var(--white);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-strip p {
+  margin: 0;
+  color: var(--silver);
+  font-size: 0.88rem;
+  line-height: 1.42;
 }
 
 .hero-band {
@@ -760,6 +820,7 @@ button {
 .panel,
 .payment-form,
 .decision-panel,
+.approval-band,
 .trail-band {
   padding: 22px;
   border: 1px solid var(--line);
@@ -773,6 +834,7 @@ button {
 .panel:hover,
 .payment-form:hover,
 .decision-panel:hover,
+.approval-band:hover,
 .trail-band:hover {
   border-color: rgba(188, 236, 255, 0.32);
   box-shadow: 0 18px 70px rgba(0, 0, 0, 0.18);
@@ -1107,6 +1169,71 @@ select:focus {
   margin-bottom: 18px;
 }
 
+.section-copy {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: var(--silver);
+  line-height: 1.5;
+}
+
+.approval-queue {
+  display: grid;
+  gap: 10px;
+}
+
+.approval-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 120px) minmax(180px, 1fr) minmax(140px, 180px) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid rgba(188, 236, 255, 0.14);
+  background: rgba(6, 17, 29, 0.64);
+}
+
+.approval-row strong,
+.approval-row span {
+  min-width: 0;
+}
+
+.approval-id,
+.approval-meta {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.approval-main {
+  display: grid;
+  gap: 5px;
+}
+
+.approval-main strong {
+  color: var(--white);
+}
+
+.approval-main span {
+  color: var(--silver);
+  overflow-wrap: anywhere;
+}
+
+.approval-amount {
+  display: grid;
+  gap: 5px;
+}
+
+.approval-amount strong {
+  color: var(--horizon);
+  font-family: var(--font-mono);
+  font-weight: 520;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .activity-log {
   display: grid;
   gap: 10px;
@@ -1238,6 +1365,7 @@ select:focus {
   .content-grid.three,
   .payments-band,
   .explain-strip,
+  .role-strip,
   .workspace-strip {
     grid-template-columns: 1fr;
   }
@@ -1297,6 +1425,18 @@ select:focus {
 
   .activity-item {
     grid-template-columns: 1fr;
+  }
+
+  .approval-row {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-actions {
+    justify-content: stretch;
+  }
+
+  .approval-actions button {
+    flex: 1;
   }
 
   .full-log-row {

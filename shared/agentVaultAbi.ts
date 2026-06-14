@@ -124,6 +124,27 @@ export const agentVaultAbi = [
     outputs: [{ name: "", type: "uint256" }],
   },
   {
+    type: "function",
+    name: "nextRequestId",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "paymentRequests",
+    stateMutability: "view",
+    inputs: [{ name: "requestId", type: "uint256" }],
+    outputs: [
+      { name: "recipient", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "metadataHash", type: "bytes32" },
+      { name: "status", type: "uint8" },
+      { name: "createdAt", type: "uint64" },
+      { name: "decidedAt", type: "uint64" },
+    ],
+  },
+  {
     type: "event",
     name: "PaymentExecuted",
     inputs: [
@@ -140,6 +161,30 @@ export const agentVaultAbi = [
       { name: "recipient", type: "address", indexed: true },
       { name: "amount", type: "uint256", indexed: false },
       { name: "metadataHash", type: "bytes32", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "PaymentApproved",
+    inputs: [
+      { name: "requestId", type: "uint256", indexed: true },
+      { name: "owner", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "PaymentRejected",
+    inputs: [
+      { name: "requestId", type: "uint256", indexed: true },
+      { name: "owner", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "PaymentCancelled",
+    inputs: [
+      { name: "requestId", type: "uint256", indexed: true },
+      { name: "caller", type: "address", indexed: true },
     ],
   },
 ] as const;
