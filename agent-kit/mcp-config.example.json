@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "paybound": {
+      "command": "node",
+      "args": ["C:/absolute/path/to/ARC 2.0/agent-kit/dist/mcp.js"],
+      "env": {
+        "DOTENV_CONFIG_PATH": "C:/absolute/path/to/ARC 2.0/agent-kit/.env"
+      }
+    }
+  }
+}

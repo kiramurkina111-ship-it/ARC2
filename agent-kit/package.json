@@ -1,0 +1,29 @@
+{
+  "name": "@paybound/agent-kit",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "SDK and MCP server for connecting AI agents to Paybound on Arc.",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev:mcp": "tsx src/mcp.ts",
+    "start:mcp": "node dist/mcp.js",
+    "smoke:mcp": "node dist/smoke-mcp.js",
+    "example": "tsx src/example-agent.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "dotenv": "17.4.2",
+    "ethers": "6.17.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3"
+  }
+}
