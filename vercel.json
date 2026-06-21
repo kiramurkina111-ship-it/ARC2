@@ -23,6 +23,10 @@
     {
       "source": "/app.js",
       "destination": "/web/app.js"
+    },
+    {
+      "source": "/assets/:path*",
+      "destination": "/web/assets/:path*"
     }
   ]
 }
