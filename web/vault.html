@@ -3,22 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>App | Agent Spending Vault</title>
+    <title>App | Paybound</title>
+    <meta
+      name="description"
+      content="Configure bounded USDC budgets, payment policy, and approvals for AI agents on Arc."
+    />
+    <meta name="theme-color" content="#06111d" />
+    <link rel="icon" href="./assets/paybound-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="rail" aria-label="Workspace">
-        <a class="brand" href="./index.html" aria-label="Agent Vault home">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <span>
-            <span class="eyebrow">ARC.RUNTIME</span>
-            <strong>Agent Vault</strong>
+        <a class="brand" href="./index.html" aria-label="Paybound home">
+          <img class="brand-mark" src="./assets/paybound-mark.svg" alt="" />
+          <span class="brand-copy">
+            <strong>Paybound</strong>
+            <span class="eyebrow">Built on Arc</span>
           </span>
         </a>
         <nav class="nav" aria-label="Application sections">
           <a class="active" href="#vault">Vault</a>
           <a href="#policy">Policy</a>
+          <a href="#agent-connect">Agent</a>
           <a href="#payments">Payments</a>
           <a href="#approvals">Approvals</a>
           <a href="#trail">Trail</a>
@@ -96,6 +103,57 @@
             <span class="eyebrow">Recipient</span>
             <strong id="recipientRole">No recipient</strong>
             <p>Receives USDC when policy allows the payment.</p>
+          </div>
+        </section>
+
+        <section class="agent-connect-band" id="agent-connect" data-tour="agent-connect">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">v0.3</span>
+              <h2>Connect agent</h2>
+            </div>
+            <span id="agentConnectionStatus" class="status-pill">Select a vault</span>
+          </div>
+          <div class="agent-connect-grid">
+            <div class="connection-details">
+              <div>
+                <span>Vault</span>
+                <strong id="agentKitVault">Not configured</strong>
+              </div>
+              <div>
+                <span>Agent signer</span>
+                <strong id="agentKitSigner">Unassigned</strong>
+              </div>
+              <div>
+                <span>Network</span>
+                <strong>Arc Testnet · 5042002</strong>
+              </div>
+              <div>
+                <span>Transport</span>
+                <strong>Local MCP · stdio</strong>
+              </div>
+            </div>
+            <div class="integration-config">
+              <div class="config-heading">
+                <span class="eyebrow">Agent environment</span>
+                <button id="copyAgentEnv" class="small-button" type="button">Copy env</button>
+              </div>
+              <pre id="agentEnvPreview">VAULT_ADDRESS=0x...
+AGENT_PRIVATE_KEY=</pre>
+              <div class="config-heading">
+                <span class="eyebrow">MCP client</span>
+                <button id="copyMcpConfig" class="small-button" type="button">Copy config</button>
+              </div>
+              <pre id="agentMcpPreview">{
+  "mcpServers": {
+    "paybound": { "command": "node", "args": [".../dist/mcp.js"] }
+  }
+}</pre>
+            </div>
+          </div>
+          <div class="security-note">
+            <strong>Signer boundary</strong>
+            <span>The private key stays in the local agent process. It is never entered into this website.</span>
           </div>
         </section>
 
@@ -304,7 +362,7 @@
     <div id="tourOverlay" class="tour-overlay" aria-hidden="true">
       <div id="tourSpotlight" class="tour-spotlight"></div>
       <section id="tourCard" class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tourTitle">
-        <span id="tourStepLabel" class="eyebrow">Step 1 of 8</span>
+        <span id="tourStepLabel" class="eyebrow">Step 1 of 9</span>
         <h2 id="tourTitle">Start with a vault</h2>
         <p id="tourText">Create one or more agent vaults and switch between them from the left rail.</p>
         <div class="tour-progress" id="tourProgress" aria-hidden="true"></div>

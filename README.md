@@ -1,136 +1,108 @@
-# Arc Agent Spending Vault
+# Paybound Agent Kit
 
-An Arc-native spending vault for AI agents.
+The v0.3 Paybound Agent Kit lets an AI agent read and use an existing AgentVault on Arc Testnet.
 
-The first version focuses on one primitive: a user gives an agent a USDC budget on Arc Testnet, then the agent can spend only inside user-defined policy.
+It includes:
 
-## Product Scope
+- a typed `AgentVaultClient` SDK;
+- a local MCP server over stdio;
+- an executable payment example;
+- safe environment-based signer configuration.
 
-- Create an agent vault
-- Create and switch between multiple agent vaults
-- Fund it with USDC
-- Deposit and withdraw funds from an existing vault
-- Delete a vault after its balance reaches zero
-- Set an agent signer
-- Define approved recipients
-- Set max spend per transaction
-- Set a daily spend limit
-- Execute policy-approved payments
-- Route risky payments through human approval
-- Review pending approval requests in the app
-- Approve, reject, or cancel risky spend requests
-- Use `initiatePayment` to execute safe payments or queue approval requests
-- Keep an activity trail with metadata hashes and transaction hashes
+No new contract deployment is required. The current AgentVault already supports agent-initiated payments and approval requests.
 
-## Arc Testnet
+## Requirements
 
-- Chain ID: `5042002`
-- RPC: `https://rpc.testnet.arc.network`
-- Explorer: `https://testnet.arcscan.app`
-- USDC ERC-20: `0x3600000000000000000000000000000000000000`
-- USDC ERC-20 decimals: `6`
+- Node.js 20.11 or newer;
+- an existing AgentVault on Arc Testnet;
+- the private key for the address assigned as the vault's `agent` signer;
+- Arc Testnet USDC in the vault.
 
-Arc uses USDC as native gas with 18-decimal accounting, while the ERC-20 interface uses 6 decimals. Application-level USDC amounts in this project use the ERC-20 interface and 6-decimal units.
+## Install
 
-## Structure
-
-```txt
-contracts/
-  AgentVault.sol
-  AgentVaultFactory.sol
-shared/
-  arc.ts
-  agentVaultAbi.ts
-  agentVaultFactoryAbi.ts
-web/
-  index.html
-  vault.html
-  styles.css
-  app.js
-  home.js
+```bash
+cd agent-kit
+npm install
 ```
 
-## Run The UI
-
-Open `web/index.html` in a browser. It is the product landing page.
-
-Open `web/vault.html` for the full application workspace. It keeps multiple vaults, vault setup, policy controls, payment testing, and the activity trail on one page.
-
-The app includes a first-run guided tour and a persistent `How to use` launcher.
-
-The app can run in two modes:
-
-- **Arc onchain mode** after a wallet is connected and an `AgentVaultFactory` address is saved in the Network panel.
-- **Local preview mode** when no wallet/factory is configured.
-
-In onchain mode the UI calls:
-
-- `AgentVaultFactory.createVault`
-- `AgentVaultFactory.vaultsOf`
-- `AgentVault.setAgent`
-- `AgentVault.setPolicy`
-- `AgentVault.setRecipientAllowed`
-- `IERC20.approve`
-- `AgentVault.deposit`
-- `AgentVault.withdraw`
-- `AgentVault.initiatePayment`
-- `AgentVault.pause` / `AgentVault.unpause`
-
-The local activity trail stores UI-side transaction notes and links hashes to Arcscan. Onchain vaults cannot be deleted in v0.1; withdraw funds to zero and leave the vault inactive.
-
-## v0.2
-
-The second version adds a real approval queue for risky agent spend:
-
-- read `nextRequestId` and recent `paymentRequests` from the active vault
-- show pending and closed requests in the app
-- approve requests through `approveRequest`
-- reject requests through `rejectRequest`
-- cancel requests through `cancelRequest`
-- keep the request outcome visible in the activity trail
-
-This turns policy failures into a usable human-in-the-loop workflow instead of a dead end.
-
-## v0.2.1 UX Hardening
-
-- hide the factory address behind advanced network settings
-- show an empty onchain state instead of falling back to a preview vault
-- explain the three core roles: owner, agent signer, recipient
-- support recipient names next to recipient addresses
-- show wallet USDC balance beside vault balance
-- add a guided risky-payment demo that creates an approval request
-
-## Launch Flow
-
-1. Deploy `AgentVaultFactory` through Remix using `ONCHAIN_LAUNCH_GUIDE.md`.
-2. Open `web/vault.html`.
-3. Connect a wallet on Arc Testnet.
-4. Use the prefilled `AgentVaultFactory` address, or paste a new one into the Network panel and click `Save factory`.
-5. Use `New`, `Deposit USDC`, `Update policy`, and `Run policy check` from the frontend.
-
-Default Arc Testnet factory:
+Create a local environment file from `.env.example` and fill in:
 
 ```txt
-0xF6b1B036942364dAabe62c833700414fd77d948D
+VAULT_ADDRESS=0x...
+AGENT_PRIVATE_KEY=0x...
 ```
 
-## Deploy To Vercel
+The address derived from `AGENT_PRIVATE_KEY` must equal the vault's configured `agent` address, or the owner address for owner-operated testing.
 
-This repo includes `vercel.json`, so it can be deployed from the repository root.
+Never place this private key in `web/`, Vercel environment variables used by the static frontend, GitHub, screenshots, or an MCP configuration file.
 
-Recommended settings:
+## Build And Check
+
+```bash
+npm run typecheck
+npm run build
+```
+
+With the environment variables loaded, run a read-only MCP round-trip check:
+
+```bash
+npm run smoke:mcp
+```
+
+## Run The Example Agent Flow
+
+Add an approved recipient to `.env`:
 
 ```txt
-Framework Preset: Other
-Root Directory: .
-Build Command: empty
-Output Directory: empty
-Install Command: empty
+RECIPIENT_ADDRESS=0x...
+PAYMENT_AMOUNT_USDC=0.42
+PAYMENT_REASON=Buy data for the research task
 ```
 
-Routes:
+Then run:
 
-```txt
-/          -> web/index.html
-/vault.html -> web/vault.html
+```bash
+npm run example
 ```
+
+The example:
+
+1. reads vault balance and policy;
+2. checks the recipient allowlist;
+3. calls `initiatePayment`;
+4. reports whether the payment executed or entered the approval queue;
+5. prints the Arcscan transaction URL.
+
+## Connect The MCP Server
+
+Build the package first:
+
+```bash
+npm run build
+```
+
+Use `mcp-config.example.json` as a template. Replace both paths with absolute paths on your machine. The MCP process loads secrets from `agent-kit/.env`; the private key does not need to appear in the client configuration.
+
+Available tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `get_vault_status` | Read balance, limits, signer authorization, pause state, and daily budget. |
+| `check_recipient` | Check whether an address is allowed for automatic payment. |
+| `request_payment` | Execute policy-safe spend or create an approval request. |
+| `create_approval_request` | Always create a human approval request. |
+| `get_payment_request` | Read the current onchain request status. |
+| `cancel_payment_request` | Cancel a pending request as agent or owner. |
+
+The server also exposes the public `paybound://connection` resource with chain, RPC, explorer, and vault address.
+
+## Security Model
+
+- The browser never receives the agent private key.
+- The MCP server checks that its signer is the vault owner or configured agent before sending a transaction.
+- Contract policy remains the final enforcement layer.
+- Payments outside policy become onchain approval requests.
+- MCP tool errors are returned to the model without printing secrets.
+- stdio is local and process-spawned; it does not open a network port.
+
+For production, move signing into a managed wallet, HSM, or isolated signer service instead of a long-lived plaintext private key.

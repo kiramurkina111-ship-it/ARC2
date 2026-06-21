@@ -125,6 +125,13 @@ export const agentVaultAbi = [
   },
   {
     type: "function",
+    name: "currentDay",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "nextRequestId",
     stateMutability: "view",
     inputs: [],

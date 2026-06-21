@@ -71,16 +71,16 @@ button {
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(188, 236, 255, 0.7);
-  border-radius: 50%;
-  background:
-    linear-gradient(135deg, transparent 38%, var(--horizon) 39%, var(--horizon) 44%, transparent 45%),
-    linear-gradient(225deg, transparent 48%, var(--cyan) 49%, var(--cyan) 54%, transparent 55%),
-    rgba(66, 215, 255, 0.06);
-  box-shadow: 0 0 30px rgba(66, 215, 255, 0.2);
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(66, 215, 255, 0.24));
   flex: 0 0 auto;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 3px;
 }
 
 .brand strong,
@@ -94,7 +94,9 @@ button {
 }
 
 .brand strong {
+  font-size: 1.08rem;
   font-weight: 650;
+  line-height: 1;
 }
 
 .eyebrow,
@@ -582,6 +584,7 @@ button {
 .hero-band,
 .payments-band,
 .approval-band,
+.agent-connect-band,
 .trail-band,
 .content-grid,
 .explain-strip,
@@ -645,6 +648,103 @@ button {
   color: var(--silver);
   font-size: 0.88rem;
   line-height: 1.42;
+}
+
+.agent-connect-band {
+  padding: 22px;
+  border: 1px solid var(--line);
+  background: rgba(8, 24, 39, 0.94);
+}
+
+.agent-connect-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(420px, 1.28fr);
+  gap: 1px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.connection-details,
+.integration-config {
+  min-width: 0;
+  padding: 18px;
+  background: rgba(6, 17, 29, 0.84);
+}
+
+.connection-details {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  padding: 0;
+  background: var(--line);
+}
+
+.connection-details div {
+  display: grid;
+  gap: 7px;
+  min-height: 76px;
+  padding: 15px;
+  background: rgba(6, 17, 29, 0.94);
+}
+
+.connection-details span {
+  color: var(--silver);
+  font-size: 0.82rem;
+}
+
+.connection-details strong {
+  overflow: hidden;
+  color: var(--white);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.integration-config {
+  display: grid;
+  gap: 12px;
+}
+
+.config-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.integration-config pre {
+  max-width: 100%;
+  min-height: 88px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid rgba(188, 236, 255, 0.14);
+  color: var(--horizon);
+  background: rgba(3, 12, 22, 0.86);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.security-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--success);
+  color: var(--silver);
+  background: rgba(84, 227, 165, 0.06);
+  font-size: 0.86rem;
+}
+
+.security-note strong {
+  flex: 0 0 auto;
+  color: var(--success);
 }
 
 .hero-band {
@@ -1365,6 +1465,7 @@ select:focus {
   .content-grid.three,
   .payments-band,
   .explain-strip,
+  .agent-connect-grid,
   .role-strip,
   .workspace-strip {
     grid-template-columns: 1fr;
@@ -1441,5 +1542,11 @@ select:focus {
 
   .full-log-row {
     grid-template-columns: 1fr;
+  }
+
+  .config-heading,
+  .security-note {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

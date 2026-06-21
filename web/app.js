@@ -26,6 +26,7 @@ const VAULT_ABI = [
   "function maxSpendPerTx() view returns (uint256)",
   "function dailyLimit() view returns (uint256)",
   "function spentToday() view returns (uint256)",
+  "function currentDay() view returns (uint256)",
   "function availableToday() view returns (uint256)",
   "function paused() view returns (bool)",
   "function balance() view returns (uint256)",
@@ -132,6 +133,11 @@ const TOUR_STEPS = [
     target: '[data-tour="treasury"]',
     title: "Fund the vault",
     text: "Deposit USDC before the agent can spend. The app submits approve and deposit transactions for the active vault.",
+  },
+  {
+    target: '[data-tour="agent-connect"]',
+    title: "Connect the agent",
+    text: "Copy the vault environment and MCP configuration, then keep the agent signer private key in the local agent process.",
   },
   {
     target: '[data-tour="payments"]',
@@ -725,6 +731,7 @@ function render() {
     if (element && !hasVault) element.disabled = true;
   });
 
+  renderAgentConnection(vault, onchain);
   renderVaultList();
   renderRecipients();
   renderApprovalQueue();
@@ -732,6 +739,69 @@ function render() {
   renderFullActivity();
   renderTour();
   renderConfirm();
+}
+
+function renderAgentConnection(vault, onchain) {
+  const signerReady = ethers.isAddress(vault.agentSigner) && vault.agentSigner !== ethers.ZeroAddress;
+  const connectionReady = onchain && signerReady;
+  const vaultAddress = connectionReady ? vault.address : "0xYOUR_VAULT_ADDRESS";
+  const envSnippet = buildAgentEnvSnippet(vaultAddress);
+  const mcpSnippet = buildMcpConfigSnippet();
+
+  setText("agentConnectionStatus", connectionReady ? "Configuration ready" : "Select onchain vault");
+  setText("agentKitVault", onchain ? vault.address : "Not configured");
+  setText("agentKitSigner", signerReady ? vault.agentSigner : "Unassigned");
+  setText("agentEnvPreview", envSnippet);
+  setText("agentMcpPreview", mcpSnippet);
+
+  const envButton = $("copyAgentEnv");
+  const mcpButton = $("copyMcpConfig");
+  if (envButton) envButton.disabled = !connectionReady || state.busy;
+  if (mcpButton) mcpButton.disabled = !connectionReady || state.busy;
+}
+
+function buildAgentEnvSnippet(vaultAddress = "0xYOUR_VAULT_ADDRESS") {
+  return [
+    `ARC_RPC=${ARC_TESTNET.rpcUrl}`,
+    `ARC_CHAIN_ID=${ARC_TESTNET.chainId}`,
+    `ARC_EXPLORER=${ARC_TESTNET.explorerUrl}`,
+    `VAULT_ADDRESS=${vaultAddress}`,
+    "AGENT_PRIVATE_KEY="
+  ].join("\n");
+}
+
+function buildMcpConfigSnippet() {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        paybound: {
+          command: "node",
+          args: ["C:/absolute/path/to/agent-kit/dist/mcp.js"],
+          env: {
+            DOTENV_CONFIG_PATH: "C:/absolute/path/to/agent-kit/.env"
+          }
+        }
+      }
+    },
+    null,
+    2
+  );
+}
+
+async function copyAgentIntegration(kind) {
+  const vault = activeVault();
+  if (!isOnchainVault(vault)) throw new Error("Select an onchain vault before copying agent configuration");
+
+  const text = kind === "env" ? buildAgentEnvSnippet(vault.address) : buildMcpConfigSnippet();
+  if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser");
+  await navigator.clipboard.writeText(text);
+
+  addActivity({
+    title: kind === "env" ? "Agent environment copied" : "MCP configuration copied",
+    detail: "Private key was not included",
+    hash: "local",
+    state: "ok"
+  });
 }
 
 function renderTour() {
@@ -986,11 +1056,12 @@ async function refreshOnchainVaults() {
   const onchainVaults = [];
   for (const address of addresses) {
     const vault = getVaultContract(address, provider);
-    const [agent, maxSpend, dailyLimit, spentToday, availableToday, balance, paused, requests] = await Promise.all([
+    const [agent, maxSpend, dailyLimit, storedSpentToday, currentDay, availableToday, balance, paused, requests] = await Promise.all([
       vault.agent(),
       vault.maxSpendPerTx(),
       vault.dailyLimit(),
       vault.spentToday(),
+      vault.currentDay(),
       vault.availableToday(),
       vault.balance(),
       vault.paused(),
@@ -998,6 +1069,8 @@ async function refreshOnchainVaults() {
     ]);
 
     const key = address.toLowerCase();
+    const today = BigInt(Math.floor(Date.now() / 86_400_000));
+    const spentToday = currentDay === today ? storedSpentToday : 0n;
     const meta = state.vaultMetadata[key] || {};
     onchainVaults.push(
       normalizeVault({
@@ -1737,6 +1810,8 @@ function bind(id, eventName, handler) {
 bind("connectWallet", "click", () => runAction(connectWallet));
 bind("switchNetwork", "click", () => runAction(() => switchNetwork(true)));
 bind("saveFactory", "click", () => runAction(saveFactoryAddress));
+bind("copyAgentEnv", "click", () => runAction(() => copyAgentIntegration("env")));
+bind("copyMcpConfig", "click", () => runAction(() => copyAgentIntegration("mcp")));
 bind("vaultForm", "submit", (event) => runAction(() => updateVault(event)));
 bind("policyForm", "submit", (event) => runAction(() => updatePolicy(event)));
 bind("paymentForm", "submit", (event) => runAction(() => initiatePayment(event)));
