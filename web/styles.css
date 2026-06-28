@@ -581,6 +581,162 @@ button {
   box-shadow: 0 0 28px rgba(84, 227, 165, 0.08);
 }
 
+.transaction-progress {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--cyan);
+  background: rgba(8, 24, 39, 0.96);
+  animation: statusReveal 220ms ease-out both;
+}
+
+.transaction-progress[hidden] {
+  display: none;
+}
+
+.transaction-progress[data-phase="confirmed"] {
+  border-left-color: var(--success);
+}
+
+.transaction-progress[data-phase="failed"] {
+  border-left-color: var(--danger);
+}
+
+.transaction-phase {
+  min-width: 88px;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.transaction-copy {
+  min-width: 0;
+}
+
+.transaction-copy strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.transaction-copy p {
+  overflow: hidden;
+  margin: 0;
+  color: var(--silver);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch-checklist {
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  background: rgba(8, 24, 39, 0.88);
+}
+
+.checklist-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+}
+
+.checklist-heading h2 {
+  margin: 5px 0 0;
+  font-size: 1.12rem;
+}
+
+.checklist-heading > strong {
+  color: var(--horizon);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 560;
+}
+
+.checklist-progress {
+  height: 2px;
+  background: rgba(188, 236, 255, 0.1);
+}
+
+.checklist-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--cyan);
+  transition: width 280ms ease;
+}
+
+.checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+}
+
+.checklist-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 0;
+  color: var(--white);
+  background: rgba(6, 17, 29, 0.95);
+  text-align: left;
+  transition: background 160ms ease;
+}
+
+.checklist-item:hover,
+.checklist-item.current {
+  background: rgba(66, 215, 255, 0.08);
+}
+
+.checklist-item.done {
+  background: rgba(84, 227, 165, 0.06);
+}
+
+.checklist-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
+.checklist-item.done .checklist-index {
+  border-color: rgba(84, 227, 165, 0.5);
+  color: var(--success);
+  background: rgba(84, 227, 165, 0.08);
+}
+
+.checklist-item strong,
+.checklist-item small {
+  display: block;
+}
+
+.checklist-item strong {
+  margin-bottom: 4px;
+  font-size: 0.86rem;
+}
+
+.checklist-item small {
+  overflow: hidden;
+  color: var(--silver);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hero-band,
 .payments-band,
 .approval-band,
@@ -656,12 +812,141 @@ button {
   background: rgba(8, 24, 39, 0.94);
 }
 
+.agent-wizard {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  gap: 1px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.wizard-steps {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  background: var(--line);
+  list-style: none;
+}
+
+.wizard-steps button {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 11px 14px;
+  border: 0;
+  color: var(--white);
+  background: rgba(6, 17, 29, 0.96);
+  text-align: left;
+}
+
+.wizard-steps button.active {
+  background: rgba(66, 215, 255, 0.1);
+  box-shadow: inset 2px 0 var(--cyan);
+}
+
+.wizard-steps button.done {
+  background: rgba(84, 227, 165, 0.05);
+}
+
+.wizard-steps button > span {
+  grid-row: 1 / span 2;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.wizard-steps button.done > span,
+.wizard-steps button.done small {
+  color: var(--success);
+}
+
+.wizard-steps strong {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.wizard-steps small {
+  margin-top: 3px;
+  color: var(--silver);
+  font-size: 0.72rem;
+}
+
+.wizard-stage {
+  display: grid;
+  align-content: start;
+  min-height: 324px;
+  padding: 24px;
+  background: rgba(6, 17, 29, 0.88);
+}
+
+.wizard-stage h3 {
+  margin: 8px 0 10px;
+  font-size: 1.32rem;
+}
+
+.wizard-stage p {
+  max-width: 650px;
+  margin: 0 0 18px;
+  color: var(--silver);
+  line-height: 1.55;
+}
+
+.wizard-stage pre {
+  max-width: 100%;
+  min-height: 96px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid rgba(188, 236, 255, 0.14);
+  color: var(--horizon);
+  background: rgba(3, 12, 22, 0.86);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.wizard-actions {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  gap: 10px;
+  margin-top: auto;
+}
+
 .agent-connect-grid {
   display: grid;
   grid-template-columns: minmax(260px, 0.72fr) minmax(420px, 1.28fr);
   gap: 1px;
   border: 1px solid var(--line);
   background: var(--line);
+}
+
+.advanced-config {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  background: rgba(6, 17, 29, 0.7);
+}
+
+.advanced-config summary {
+  padding: 13px 16px;
+  color: var(--horizon);
+  font-size: 0.84rem;
+  font-weight: 580;
+  cursor: pointer;
+}
+
+.advanced-config[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.advanced-config .agent-connect-grid {
+  border: 0;
 }
 
 .connection-details,
@@ -1465,10 +1750,15 @@ select:focus {
   .content-grid.three,
   .payments-band,
   .explain-strip,
+  .agent-wizard,
   .agent-connect-grid,
   .role-strip,
   .workspace-strip {
     grid-template-columns: 1fr;
+  }
+
+  .checklist-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .landing-hero {
@@ -1548,5 +1838,62 @@ select:focus {
   .security-note {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .transaction-progress {
+    grid-template-columns: 1fr auto;
+  }
+
+  .transaction-phase,
+  .transaction-copy {
+    grid-column: 1 / -1;
+  }
+
+  .transaction-copy p {
+    white-space: normal;
+  }
+
+  .checklist-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .checklist-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .wizard-actions .secondary-button {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+}
+
+@keyframes statusReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
