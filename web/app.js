@@ -14,6 +14,7 @@ const DEFAULT_FACTORY_ADDRESS = "0xF6b1B036942364dAabe62c833700414fd77d948D";
 const USDC_DECIMALS = 6;
 const STORAGE_KEY = "arc-agent-vault-onchain-state";
 const LEGACY_STORAGE_KEY = "arc-agent-vault-state";
+const LOCAL_PREVIEW_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const FACTORY_ABI = [
   "function createVault(address agent,uint256 maxSpendPerTx,uint256 dailyLimit) returns (address)",
@@ -166,6 +167,10 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function localPreviewAllowed() {
+  return window.location.protocol === "file:" || LOCAL_PREVIEW_HOSTS.has(window.location.hostname);
+}
+
 function loadState() {
   const stored = readJson(STORAGE_KEY);
   if (stored) return normalizeState(stored);
@@ -193,6 +198,12 @@ function readJson(key) {
 }
 
 function normalizeState(stored) {
+  const storedVaults = Array.isArray(stored.vaults) ? stored.vaults : [];
+  const availableVaults = localPreviewAllowed()
+    ? storedVaults.length > 0
+      ? storedVaults
+      : clone(DEFAULT_SIM_VAULTS)
+    : storedVaults.filter((vault) => vault?.source === "onchain");
   const next = {
     connectedAccount: stored.connectedAccount || null,
     factoryAddress: stored.factoryAddress || DEFAULT_FACTORY_ADDRESS,
@@ -203,10 +214,17 @@ function normalizeState(stored) {
     tourSeen: Boolean(stored.tourSeen),
     tourOpen: Boolean(stored.tourOpen),
     tourIndex: Number(stored.tourIndex || 0),
+    agentWizardStep: Math.min(Math.max(Number(stored.agentWizardStep || 0), 0), 4),
+    agentSetup: {
+      envCopied: Boolean(stored.agentSetup?.envCopied),
+      mcpCopied: Boolean(stored.agentSetup?.mcpCopied),
+      doctorCopied: Boolean(stored.agentSetup?.doctorCopied),
+    },
+    transaction: null,
     confirm: null,
     busy: false,
     vaultMetadata: stored.vaultMetadata || {},
-    vaults: Array.isArray(stored.vaults) && stored.vaults.length > 0 ? stored.vaults : clone(DEFAULT_SIM_VAULTS),
+    vaults: availableVaults,
   };
 
   next.vaults = next.vaults.map(normalizeVault);
@@ -694,7 +712,7 @@ function render() {
     setText("modeBadge", hasFactory() ? (hasVault ? "Arc onchain" : "No vault yet") : "Add factory address");
   } else {
     setText("connectWallet", "Connect wallet");
-    setText("modeBadge", "Local preview");
+    setText("modeBadge", localPreviewAllowed() ? "Local preview" : "Connect to Arc");
   }
 
   document.querySelectorAll("button, input, select").forEach((element) => {
@@ -732,6 +750,8 @@ function render() {
   });
 
   renderAgentConnection(vault, onchain);
+  renderLaunchChecklist(vault, onchain);
+  renderTransactionProgress();
   renderVaultList();
   renderRecipients();
   renderApprovalQueue();
@@ -744,20 +764,179 @@ function render() {
 function renderAgentConnection(vault, onchain) {
   const signerReady = ethers.isAddress(vault.agentSigner) && vault.agentSigner !== ethers.ZeroAddress;
   const connectionReady = onchain && signerReady;
+  const configReady = state.agentSetup.envCopied && state.agentSetup.mcpCopied;
   const vaultAddress = connectionReady ? vault.address : "0xYOUR_VAULT_ADDRESS";
   const envSnippet = buildAgentEnvSnippet(vaultAddress);
   const mcpSnippet = buildMcpConfigSnippet();
 
-  setText("agentConnectionStatus", connectionReady ? "Configuration ready" : "Select onchain vault");
+  const connectionStatus = !onchain
+    ? "Select onchain vault"
+    : !signerReady
+      ? "Assign agent signer"
+      : !configReady
+        ? "Continue setup"
+        : "Ready to verify";
+
+  setText("agentConnectionStatus", connectionStatus);
   setText("agentKitVault", onchain ? vault.address : "Not configured");
   setText("agentKitSigner", signerReady ? vault.agentSigner : "Unassigned");
   setText("agentEnvPreview", envSnippet);
   setText("agentMcpPreview", mcpSnippet);
+  setText("wizardVaultStatus", onchain ? "Ready" : "Required");
+  setText("wizardSignerStatus", signerReady ? "Ready" : "Required");
+  setText("wizardEnvStatus", state.agentSetup.envCopied ? "Copied" : "Not copied");
+  setText("wizardMcpStatus", state.agentSetup.mcpCopied ? "Copied" : "Not copied");
+  setText("wizardDoctorStatus", state.agentSetup.doctorCopied ? "Command copied" : "Run doctor");
 
   const envButton = $("copyAgentEnv");
   const mcpButton = $("copyMcpConfig");
   if (envButton) envButton.disabled = !connectionReady || state.busy;
   if (mcpButton) mcpButton.disabled = !connectionReady || state.busy;
+
+  const steps = [
+    {
+      done: onchain,
+      title: "Select an onchain vault",
+      text: state.connectedAccount
+        ? "Create or select the Paybound vault this agent will use. Each vault has an independent balance and policy."
+        : "Connect the owner wallet first, then create or select the Paybound vault this agent will use.",
+      code: "",
+      action: onchain ? "Vault selected" : state.connectedAccount ? "Open vaults" : "Connect wallet",
+      disabled: onchain,
+    },
+    {
+      done: signerReady,
+      title: "Assign the agent signer",
+      text: "Use a dedicated testnet wallet for the agent. Save its public address in Vault details; keep the private key only in the local agent process.",
+      code: signerReady ? `AGENT_ADDRESS=${vault.agentSigner}` : "AGENT_ADDRESS=0xYOUR_AGENT_ADDRESS",
+      action: signerReady ? "Signer assigned" : "Open vault details",
+      disabled: signerReady || !onchain,
+    },
+    {
+      done: state.agentSetup.envCopied,
+      title: "Create the agent environment",
+      text: "Copy the public connection values into agent-kit/.env, then add the private key locally. Paybound never sends that key to the website.",
+      code: envSnippet,
+      action: state.agentSetup.envCopied ? "Copy env again" : "Copy env",
+      disabled: !connectionReady,
+    },
+    {
+      done: state.agentSetup.mcpCopied,
+      title: "Register the MCP server",
+      text: "Add this server entry to your MCP client and replace both example paths with absolute paths on your machine.",
+      code: mcpSnippet,
+      action: state.agentSetup.mcpCopied ? "Copy config again" : "Copy config",
+      disabled: !connectionReady,
+    },
+    {
+      done: state.agentSetup.doctorCopied,
+      title: "Verify the local connection",
+      text: "Run the doctor command locally. It checks the RPC, chain, contract, signer authorization, balance, pause state, and policy without spending USDC.",
+      code: "cd agent-kit\nnpm install\nnpm run doctor",
+      action: state.agentSetup.doctorCopied ? "Copy command again" : "Copy doctor command",
+      disabled: !configReady,
+    },
+  ];
+
+  const currentStep = steps[state.agentWizardStep] || steps[0];
+  document.querySelectorAll("[data-agent-step]").forEach((button, index) => {
+    button.classList.toggle("active", index === state.agentWizardStep);
+    button.classList.toggle("done", steps[index]?.done === true);
+    button.setAttribute("aria-current", index === state.agentWizardStep ? "step" : "false");
+  });
+
+  setText("agentWizardEyebrow", `Step ${state.agentWizardStep + 1} of ${steps.length}`);
+  setText("agentWizardTitle", currentStep.title);
+  setText("agentWizardText", currentStep.text);
+  setText("agentWizardAction", currentStep.action);
+
+  const code = $("agentWizardCode");
+  if (code) {
+    code.hidden = !currentStep.code;
+    code.textContent = currentStep.code;
+  }
+
+  const action = $("agentWizardAction");
+  const prev = $("agentWizardPrev");
+  const next = $("agentWizardNext");
+  if (action) action.disabled = currentStep.disabled || state.busy;
+  if (prev) prev.disabled = state.agentWizardStep === 0 || state.busy;
+  if (next) next.disabled = state.agentWizardStep === steps.length - 1 || state.busy;
+}
+
+function renderLaunchChecklist(vault, onchain) {
+  const signerReady = ethers.isAddress(vault.agentSigner) && vault.agentSigner !== ethers.ZeroAddress;
+  const policyReady = vault.recipients.length > 0 && vault.maxSpend > 0 && vault.dailyLimit > 0;
+  const setupReady = state.agentSetup.envCopied && state.agentSetup.mcpCopied;
+  const checks = {
+    wallet: Boolean(state.connectedAccount),
+    vault: onchain,
+    signer: signerReady,
+    funded: onchain && vault.balance > 0,
+    policy: onchain && policyReady,
+    agent: onchain && signerReady && setupReady,
+  };
+  const completed = Object.values(checks).filter(Boolean).length;
+  const firstIncomplete = Object.keys(checks).find((key) => !checks[key]);
+
+  setText("launchProgressLabel", `${completed} of ${Object.keys(checks).length} ready`);
+  setText("checkWallet", checks.wallet ? shortHash(state.connectedAccount) : "Connect wallet");
+  setText("checkVault", checks.vault ? shortHash(vault.address) : "Create or select");
+  setText("checkSigner", checks.signer ? shortHash(vault.agentSigner) : "Assign signer");
+  setText("checkFunded", checks.funded ? `${formatUsdc(vault.balance)} USDC` : "Deposit USDC");
+  setText("checkPolicy", checks.policy ? `${vault.recipients.length} recipient${vault.recipients.length === 1 ? "" : "s"}` : "Add recipient and limits");
+  setText("checkAgent", checks.agent ? "Ready to verify" : "Copy configuration");
+
+  const bar = $("launchProgressBar");
+  if (bar) bar.style.width = `${(completed / Object.keys(checks).length) * 100}%`;
+
+  document.querySelectorAll("[data-checklist-key]").forEach((item) => {
+    const key = item.dataset.checklistKey;
+    item.classList.toggle("done", checks[key] === true);
+    item.classList.toggle("current", key === firstIncomplete);
+  });
+}
+
+function renderTransactionProgress() {
+  const panel = $("transactionProgress");
+  if (!panel) return;
+
+  const transaction = state.transaction;
+  panel.hidden = !transaction;
+  if (!transaction) return;
+
+  panel.dataset.phase = transaction.phase;
+  setText("transactionPhase", transaction.phase === "wallet" ? "Wallet" : transaction.phase);
+  setText("transactionTitle", transaction.title);
+  setText("transactionDetail", transaction.detail);
+
+  const explorer = $("transactionExplorer");
+  if (explorer) {
+    explorer.hidden = !transaction.hash || !transaction.hash.startsWith("0x");
+    explorer.href = transaction.hash?.startsWith("0x") ? explorerTx(transaction.hash) : "#";
+  }
+}
+
+function setTransactionProgress(phase, title, detail, hash = "") {
+  state.transaction = { phase, title, detail, hash };
+  renderTransactionProgress();
+}
+
+function clearTransactionProgress() {
+  state.transaction = null;
+  renderTransactionProgress();
+}
+
+function requestWalletConfirmation(detail) {
+  setTransactionProgress("wallet", "Confirm in wallet", detail);
+}
+
+async function confirmTransaction(tx, detail) {
+  setTransactionProgress("submitted", "Transaction submitted", detail, tx.hash);
+  const receipt = await tx.wait();
+  if (!receipt) throw new Error("Transaction was submitted but no receipt was returned");
+  setTransactionProgress("confirmed", "Confirmed on Arc", detail, receipt.hash || tx.hash);
+  return receipt;
 }
 
 function buildAgentEnvSnippet(vaultAddress = "0xYOUR_VAULT_ADDRESS") {
@@ -795,6 +974,8 @@ async function copyAgentIntegration(kind) {
   const text = kind === "env" ? buildAgentEnvSnippet(vault.address) : buildMcpConfigSnippet();
   if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser");
   await navigator.clipboard.writeText(text);
+  if (kind === "env") state.agentSetup.envCopied = true;
+  if (kind === "mcp") state.agentSetup.mcpCopied = true;
 
   addActivity({
     title: kind === "env" ? "Agent environment copied" : "MCP configuration copied",
@@ -802,6 +983,62 @@ async function copyAgentIntegration(kind) {
     hash: "local",
     state: "ok"
   });
+}
+
+async function copyDoctorCommand() {
+  if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser");
+  await navigator.clipboard.writeText("cd agent-kit\nnpm install\nnpm run doctor");
+  state.agentSetup.doctorCopied = true;
+  addActivity({
+    title: "Doctor command copied",
+    detail: "Run it locally to verify the agent connection without spending USDC",
+    hash: "local",
+    state: "ok",
+  });
+}
+
+async function runAgentWizardAction() {
+  const step = state.agentWizardStep;
+  if (step === 0) {
+    if (!state.connectedAccount) {
+      await connectWallet();
+      return;
+    }
+    document.querySelector('[data-tour="vault-switcher"]')?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  if (step === 1) {
+    document.querySelector("#policy")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => $("agentSigner")?.focus(), 320);
+    return;
+  }
+  if (step === 2) await copyAgentIntegration("env");
+  if (step === 3) await copyAgentIntegration("mcp");
+  if (step === 4) await copyDoctorCommand();
+}
+
+function changeAgentWizardStep(delta) {
+  state.agentWizardStep = Math.min(Math.max(state.agentWizardStep + delta, 0), 4);
+  saveState();
+  render();
+}
+
+function selectAgentWizardStep(event) {
+  const button = event.target.closest("[data-agent-step]");
+  if (!button) return;
+  state.agentWizardStep = Number(button.dataset.agentStep || 0);
+  saveState();
+  render();
+}
+
+function handleChecklistNavigation(event) {
+  const item = event.target.closest("[data-checklist-target]");
+  if (!item) return;
+  if (item.dataset.checklistKey === "wallet" && !state.connectedAccount) {
+    runAction(connectWallet);
+    return;
+  }
+  document.querySelector(item.dataset.checklistTarget)?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function renderTour() {
@@ -947,14 +1184,17 @@ function acceptConfirm() {
 async function runAction(action) {
   if (state.busy) return;
   state.busy = true;
+  clearTransactionProgress();
   render();
 
   try {
     await action();
   } catch (error) {
+    const detail = describeError(error);
+    setTransactionProgress("failed", "Action failed", detail);
     addActivity({
-      title: "Transaction failed",
-      detail: describeError(error),
+      title: "Action failed",
+      detail,
       hash: "wallet",
       state: "risk",
     });
@@ -966,13 +1206,31 @@ async function runAction(action) {
 }
 
 function describeError(error) {
-  return (
+  const raw = (
     error?.shortMessage ||
     error?.reason ||
     error?.info?.error?.message ||
     error?.message ||
     "The wallet or RPC rejected the request"
   );
+  const message = String(raw);
+
+  if (error?.code === 4001 || error?.code === "ACTION_REJECTED" || /user rejected|user denied/i.test(message)) {
+    return "You rejected the request in your wallet. No transaction was submitted.";
+  }
+  if (/insufficient funds/i.test(message)) return "The connected wallet does not have enough balance for this transaction.";
+  if (/No injected wallet/i.test(message)) return "No browser wallet was detected. Install or unlock an EVM wallet and try again.";
+  if (/NotOwner/i.test(message)) return "Only the vault owner can perform this action. Connect the owner wallet.";
+  if (/NotAgentOrOwner/i.test(message)) return "The connected signer is not authorized as this vault's owner or agent.";
+  if (/PausedVault/i.test(message)) return "This vault is paused. Unpause it before sending a payment.";
+  if (/RecipientNotAllowed/i.test(message)) return "This recipient is not approved by the active vault policy.";
+  if (/MaxSpendExceeded/i.test(message)) return "The requested amount exceeds the per-action spending limit.";
+  if (/DailyLimitExceeded/i.test(message)) return "The requested amount exceeds today's remaining budget.";
+  if (/RequestNotPending/i.test(message)) return "This approval request has already been resolved.";
+  if (/network|chain/i.test(message) && /expected|unsupported|switch/i.test(message)) {
+    return "Switch the connected wallet to Arc Testnet and try again.";
+  }
+  return message.replace(/^execution reverted:\s*/i, "");
 }
 
 async function ensureWallet() {
@@ -1158,6 +1416,7 @@ async function updateVault(event) {
   if (isOnchainVault(vault)) {
     if (!ethers.isAddress(nextAgent)) throw new Error("Agent signer must be a full 0x address");
     await ensureWallet();
+    requestWalletConfirmation(`Assign ${shortHash(nextAgent)} as the agent signer`);
     const tx = await getVaultContract(vault.address, signer).setAgent(nextAgent);
     addActivity({
       title: "Agent update submitted",
@@ -1165,7 +1424,7 @@ async function updateVault(event) {
       hash: tx.hash,
       state: "warn",
     });
-    await tx.wait();
+    await confirmTransaction(tx, `Agent signer ${shortHash(nextAgent)}`);
     vault.agentSigner = ethers.getAddress(nextAgent);
     syncActiveMetadata();
     await refreshOnchainVaults();
@@ -1192,6 +1451,7 @@ async function depositFunds() {
     const usdc = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, signer);
     const onchainVault = getVaultContract(vault.address, signer);
 
+    requestWalletConfirmation(`Approve ${formatUsdc(amount)} USDC for the active vault`);
     const approveTx = await usdc.approve(vault.address, amountUnits);
     addActivity({
       title: "USDC approval submitted",
@@ -1199,8 +1459,9 @@ async function depositFunds() {
       hash: approveTx.hash,
       state: "warn",
     });
-    await approveTx.wait();
+    await confirmTransaction(approveTx, `USDC approval for ${shortHash(vault.address)}`);
 
+    requestWalletConfirmation(`Deposit ${formatUsdc(amount)} USDC into ${vault.agentName}`);
     const depositTx = await onchainVault.deposit(amountUnits);
     addActivity({
       title: "Deposit submitted",
@@ -1208,7 +1469,7 @@ async function depositFunds() {
       hash: depositTx.hash,
       state: "warn",
     });
-    await depositTx.wait();
+    await confirmTransaction(depositTx, `${formatUsdc(amount)} USDC deposit`);
     await refreshOnchainVaults();
     addActivity({
       title: "Funds deposited",
@@ -1236,6 +1497,7 @@ async function withdrawFunds(amountOverride) {
 
   if (isOnchainVault(vault)) {
     await ensureWallet();
+    requestWalletConfirmation(`Withdraw ${formatUsdc(amount)} USDC to the owner wallet`);
     const tx = await getVaultContract(vault.address, signer).withdraw(toUnits(amount));
     addActivity({
       title: "Withdrawal submitted",
@@ -1243,7 +1505,7 @@ async function withdrawFunds(amountOverride) {
       hash: tx.hash,
       state: "warn",
     });
-    await tx.wait();
+    await confirmTransaction(tx, `${formatUsdc(amount)} USDC withdrawal`);
     await refreshOnchainVaults();
     addActivity({
       title: "Funds withdrawn",
@@ -1350,6 +1612,7 @@ async function updatePolicy(event) {
     if (recipient && !ethers.isAddress(recipient)) throw new Error("Approved recipient must be a full 0x address");
     await ensureWallet();
     const contract = getVaultContract(vault.address, signer);
+    requestWalletConfirmation(`Set ${formatUsdc(maxSpend)} USDC per action and ${formatUsdc(dailyLimit)} USDC daily`);
     const policyTx = await contract.setPolicy(toUnits(maxSpend), toUnits(dailyLimit));
     addActivity({
       title: "Policy update submitted",
@@ -1357,12 +1620,13 @@ async function updatePolicy(event) {
       hash: policyTx.hash,
       state: "warn",
     });
-    await policyTx.wait();
+    await confirmTransaction(policyTx, "Vault spending limits");
 
     if (
       recipient &&
       !vault.recipients.some((item) => normalizeRecipient(item).address.toLowerCase() === recipient.toLowerCase())
     ) {
+      requestWalletConfirmation(`Approve ${shortHash(recipient)} as a payment recipient`);
       const allowTx = await contract.setRecipientAllowed(recipient, true);
       addActivity({
         title: "Recipient approval submitted",
@@ -1370,7 +1634,7 @@ async function updatePolicy(event) {
         hash: allowTx.hash,
         state: "warn",
       });
-      await allowTx.wait();
+      await confirmTransaction(allowTx, `Recipient ${shortHash(recipient)} approved`);
       vault.recipients.push({
         name: recipientName || shortHash(recipient),
         address: ethers.getAddress(recipient),
@@ -1420,6 +1684,7 @@ async function initiatePayment(event) {
   if (isOnchainVault(vault)) {
     if (!ethers.isAddress(recipient)) throw new Error("Payment recipient must be a full 0x address");
     await ensureWallet();
+    requestWalletConfirmation(`Request ${formatUsdc(amount)} USDC payment to ${shortHash(recipient)}`);
     const tx = await getVaultContract(vault.address, signer).initiatePayment(recipient, toUnits(amount), hash);
     setText("decisionTitle", "Submitted");
     setText("decisionText", "Waiting for Arc Testnet finality.");
@@ -1430,7 +1695,7 @@ async function initiatePayment(event) {
       state: "warn",
     });
 
-    const receipt = await tx.wait();
+    const receipt = await confirmTransaction(tx, `${formatUsdc(amount)} USDC agent payment`);
     const outcome = parsePaymentOutcome(receipt, vault.address);
     await refreshOnchainVaults();
 
@@ -1537,6 +1802,7 @@ async function togglePause() {
 
   if (isOnchainVault(vault)) {
     await ensureWallet();
+    requestWalletConfirmation(willPause ? "Pause all agent payments" : "Resume agent payments");
     const tx = vault.paused
       ? await getVaultContract(vault.address, signer).unpause()
       : await getVaultContract(vault.address, signer).pause();
@@ -1546,7 +1812,7 @@ async function togglePause() {
       hash: tx.hash,
       state: "warn",
     });
-    await tx.wait();
+    await confirmTransaction(tx, willPause ? "Vault paused" : "Vault unpaused");
     await refreshOnchainVaults();
   } else {
     vault.paused = !vault.paused;
@@ -1608,6 +1874,7 @@ async function removeRecipientConfirmed(recipientToRemove) {
   const vault = activeVault();
   if (isOnchainVault(vault) && ethers.isAddress(recipientToRemove)) {
     await ensureWallet();
+    requestWalletConfirmation(`Remove ${shortHash(recipientToRemove)} from approved recipients`);
     const tx = await getVaultContract(vault.address, signer).setRecipientAllowed(recipientToRemove, false);
     addActivity({
       title: "Recipient removal submitted",
@@ -1615,7 +1882,7 @@ async function removeRecipientConfirmed(recipientToRemove) {
       hash: tx.hash,
       state: "warn",
     });
-    await tx.wait();
+    await confirmTransaction(tx, `Recipient ${shortHash(recipientToRemove)} removed`);
   }
 
   vault.recipients = vault.recipients.filter(
@@ -1664,6 +1931,7 @@ async function executeRequestAction(action, requestId) {
     const contract = getVaultContract(vault.address, signer);
     let tx;
 
+    requestWalletConfirmation(`${capitalize(action)} approval request #${requestId}`);
     if (action === "approve") tx = await contract.approveRequest(requestId);
     if (action === "reject") tx = await contract.rejectRequest(requestId);
     if (action === "cancel") tx = await contract.cancelRequest(requestId);
@@ -1676,7 +1944,7 @@ async function executeRequestAction(action, requestId) {
       state: "warn",
     });
 
-    await tx.wait();
+    await confirmTransaction(tx, `${capitalize(action)} request #${requestId}`);
     await refreshOnchainVaults();
 
     addActivity({
@@ -1729,6 +1997,10 @@ function closeConfirmOnBackdrop(event) {
 }
 
 async function createVault() {
+  if (!localPreviewAllowed() && !state.connectedAccount) {
+    await ensureWallet();
+  }
+
   if (state.connectedAccount && hasFactory()) {
     await ensureWallet();
     const agentInput = $("agentSigner")?.value.trim();
@@ -1736,6 +2008,7 @@ async function createVault() {
     const maxSpend = Number($("maxSpend")?.value || 1);
     const dailyLimit = Number($("dailyLimit")?.value || 5);
     const factory = getFactory(signer);
+    requestWalletConfirmation(`Create a vault for agent ${shortHash(agent)}`);
     const tx = await factory.createVault(agent, toUnits(maxSpend), toUnits(dailyLimit));
     addActivity({
       title: "Vault creation submitted",
@@ -1743,7 +2016,7 @@ async function createVault() {
       hash: tx.hash,
       state: "warn",
     });
-    await tx.wait();
+    await confirmTransaction(tx, `New vault for ${shortHash(agent)}`);
     await refreshOnchainVaults();
     const created = state.vaults[state.vaults.length - 1];
     if (created) {
@@ -1758,6 +2031,10 @@ async function createVault() {
       state: "ok",
     });
     return;
+  }
+
+  if (!localPreviewAllowed()) {
+    throw new Error("Connect the owner wallet and configure the AgentVaultFactory before creating a vault");
   }
 
   const index = state.vaults.length + 1;
@@ -1812,6 +2089,12 @@ bind("switchNetwork", "click", () => runAction(() => switchNetwork(true)));
 bind("saveFactory", "click", () => runAction(saveFactoryAddress));
 bind("copyAgentEnv", "click", () => runAction(() => copyAgentIntegration("env")));
 bind("copyMcpConfig", "click", () => runAction(() => copyAgentIntegration("mcp")));
+bind("agentWizardAction", "click", () => runAction(runAgentWizardAction));
+bind("agentWizardPrev", "click", () => changeAgentWizardStep(-1));
+bind("agentWizardNext", "click", () => changeAgentWizardStep(1));
+bind("agentWizardSteps", "click", selectAgentWizardStep);
+bind("launchChecklist", "click", handleChecklistNavigation);
+bind("dismissTransaction", "click", clearTransactionProgress);
 bind("vaultForm", "submit", (event) => runAction(() => updateVault(event)));
 bind("policyForm", "submit", (event) => runAction(() => updatePolicy(event)));
 bind("paymentForm", "submit", (event) => runAction(() => initiatePayment(event)));

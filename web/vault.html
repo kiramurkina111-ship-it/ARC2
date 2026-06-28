@@ -64,10 +64,51 @@
             </p>
           </div>
           <div class="top-actions" data-tour="wallet">
-            <span id="modeBadge" class="status-pill">Local preview</span>
+            <span id="modeBadge" class="status-pill">Connect to Arc</span>
             <button id="connectWallet" class="primary-button" type="button">Connect wallet</button>
           </div>
         </header>
+
+        <section id="transactionProgress" class="transaction-progress" aria-live="polite" hidden>
+          <span id="transactionPhase" class="transaction-phase">Wallet</span>
+          <div class="transaction-copy">
+            <strong id="transactionTitle">Confirm the transaction</strong>
+            <p id="transactionDetail">Review the request in your wallet.</p>
+          </div>
+          <a id="transactionExplorer" class="small-button" href="#" target="_blank" rel="noreferrer" hidden>Arcscan</a>
+          <button id="dismissTransaction" class="small-button" type="button">Dismiss</button>
+        </section>
+
+        <section id="launchChecklist" class="launch-checklist" aria-labelledby="launchChecklistTitle">
+          <div class="checklist-heading">
+            <div>
+              <span class="eyebrow">Launch checklist</span>
+              <h2 id="launchChecklistTitle">First agent payment</h2>
+            </div>
+            <strong id="launchProgressLabel">1 of 6 ready</strong>
+          </div>
+          <div class="checklist-progress" aria-hidden="true"><span id="launchProgressBar"></span></div>
+          <div class="checklist-grid">
+            <button class="checklist-item" type="button" data-checklist-key="wallet" data-checklist-target="[data-tour='wallet']">
+              <span class="checklist-index">01</span><span><strong>Owner wallet</strong><small id="checkWallet">Connect wallet</small></span>
+            </button>
+            <button class="checklist-item" type="button" data-checklist-key="vault" data-checklist-target="[data-tour='vault-switcher']">
+              <span class="checklist-index">02</span><span><strong>Onchain vault</strong><small id="checkVault">Create or select</small></span>
+            </button>
+            <button class="checklist-item" type="button" data-checklist-key="signer" data-checklist-target="#policy">
+              <span class="checklist-index">03</span><span><strong>Agent signer</strong><small id="checkSigner">Assign signer</small></span>
+            </button>
+            <button class="checklist-item" type="button" data-checklist-key="funded" data-checklist-target="[data-tour='treasury']">
+              <span class="checklist-index">04</span><span><strong>Fund vault</strong><small id="checkFunded">Deposit USDC</small></span>
+            </button>
+            <button class="checklist-item" type="button" data-checklist-key="policy" data-checklist-target="#policy">
+              <span class="checklist-index">05</span><span><strong>Spend policy</strong><small id="checkPolicy">Add recipient</small></span>
+            </button>
+            <button class="checklist-item" type="button" data-checklist-key="agent" data-checklist-target="#agent-connect">
+              <span class="checklist-index">06</span><span><strong>Agent setup</strong><small id="checkAgent">Copy configuration</small></span>
+            </button>
+          </div>
+        </section>
 
         <section class="workspace-strip" aria-label="Active vault summary" data-tour="summary">
           <div>
@@ -114,7 +155,29 @@
             </div>
             <span id="agentConnectionStatus" class="status-pill">Select a vault</span>
           </div>
-          <div class="agent-connect-grid">
+          <div class="agent-wizard">
+            <ol id="agentWizardSteps" class="wizard-steps" aria-label="Agent connection steps">
+              <li><button type="button" data-agent-step="0"><span>01</span><strong>Select vault</strong><small id="wizardVaultStatus">Required</small></button></li>
+              <li><button type="button" data-agent-step="1"><span>02</span><strong>Assign signer</strong><small id="wizardSignerStatus">Required</small></button></li>
+              <li><button type="button" data-agent-step="2"><span>03</span><strong>Agent environment</strong><small id="wizardEnvStatus">Not copied</small></button></li>
+              <li><button type="button" data-agent-step="3"><span>04</span><strong>MCP client</strong><small id="wizardMcpStatus">Not copied</small></button></li>
+              <li><button type="button" data-agent-step="4"><span>05</span><strong>Verify locally</strong><small id="wizardDoctorStatus">Run doctor</small></button></li>
+            </ol>
+            <div class="wizard-stage">
+              <span id="agentWizardEyebrow" class="eyebrow">Step 1 of 5</span>
+              <h3 id="agentWizardTitle">Select an onchain vault</h3>
+              <p id="agentWizardText">The agent connects to one active Paybound vault on Arc Testnet.</p>
+              <pre id="agentWizardCode" hidden></pre>
+              <div class="wizard-actions">
+                <button id="agentWizardPrev" class="small-button" type="button">Previous</button>
+                <button id="agentWizardAction" class="secondary-button" type="button">Open vaults</button>
+                <button id="agentWizardNext" class="primary-button" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+          <details class="advanced-config">
+            <summary>View generated configuration</summary>
+            <div class="agent-connect-grid">
             <div class="connection-details">
               <div>
                 <span>Vault</span>
@@ -150,7 +213,8 @@ AGENT_PRIVATE_KEY=</pre>
   }
 }</pre>
             </div>
-          </div>
+            </div>
+          </details>
           <div class="security-note">
             <strong>Signer boundary</strong>
             <span>The private key stays in the local agent process. It is never entered into this website.</span>
