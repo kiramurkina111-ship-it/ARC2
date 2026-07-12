@@ -1,6 +1,6 @@
 # Paybound Agent Kit
 
-The v0.3 Paybound Agent Kit lets an AI agent read and use an existing AgentVault on Arc Testnet.
+The Paybound Agent Kit lets an AI agent read and use an existing AgentVault on Arc Testnet.
 
 It includes:
 
@@ -43,6 +43,15 @@ npm run typecheck
 npm run build
 ```
 
+Before connecting an MCP client, run the read-only readiness check:
+
+```bash
+npm run doctor
+```
+
+The doctor checks the environment, RPC chain, vault contract, signer authorization, pause state, vault balance,
+spend limits, and signer gas balance. It never submits a transaction or prints the private key.
+
 With the environment variables loaded, run a read-only MCP round-trip check:
 
 ```bash
@@ -51,7 +60,7 @@ npm run smoke:mcp
 
 ## Run The Example Agent Flow
 
-Add an approved recipient to `.env`:
+Add an approved vendor or recipient address to `.env`:
 
 ```txt
 RECIPIENT_ADDRESS=0x...
@@ -68,7 +77,7 @@ npm run example
 The example:
 
 1. reads vault balance and policy;
-2. checks the recipient allowlist;
+2. checks the vendor/recipient allowlist;
 3. calls `initiatePayment`;
 4. reports whether the payment executed or entered the approval queue;
 5. prints the Arcscan transaction URL.
