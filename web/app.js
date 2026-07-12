@@ -63,6 +63,45 @@ const ERC20_ABI = [
   "function balanceOf(address account) view returns (uint256)",
 ];
 
+const DEFAULT_VENDOR_CATALOG = [
+  {
+    name: "Verified Data API",
+    address: "Verified Data API",
+    category: "Data",
+    price: 0.42,
+    description: "Buys enriched company records for the active research task.",
+    result: "42 verified fintech leads with source links.",
+    sla: "sub-second",
+  },
+  {
+    name: "KYC Risk Check",
+    address: "KYC Risk Check",
+    category: "Compliance",
+    price: 0.3,
+    description: "Checks vendor reputation and sanctions risk before spend.",
+    result: "Risk score, allow/deny signal, and signed review note.",
+    sla: "2 sec",
+  },
+  {
+    name: "Compute Inference Node",
+    address: "Compute Inference Node",
+    category: "Compute",
+    price: 0.18,
+    description: "Runs a small model inference job for lead scoring.",
+    result: "Ranked lead list with confidence scores.",
+    sla: "3 sec",
+  },
+  {
+    name: "Premium Market Dataset",
+    address: "Premium Market Dataset",
+    category: "Dataset",
+    price: 2.4,
+    description: "Higher-value source that should require owner approval.",
+    result: "Paid dataset receipt and normalized rows.",
+    sla: "5 sec",
+  },
+];
+
 const DEFAULT_SIM_VAULTS = [
   {
     id: "vault-research",
@@ -74,10 +113,7 @@ const DEFAULT_SIM_VAULTS = [
     dailyLimit: 15,
     spentToday: 3.3,
     availableToday: 11.7,
-    recipients: [
-      { name: "Verified Data API", address: "Verified Data API" },
-      { name: "Compliance Verifier", address: "Compliance Verifier" },
-    ],
+    recipients: DEFAULT_VENDOR_CATALOG.slice(0, 2),
     paused: false,
     pendingRequests: [],
     activity: [
@@ -112,23 +148,28 @@ const EMPTY_VAULT = {
 const TOUR_STEPS = [
   {
     target: '[data-tour="vault-switcher"]',
-    title: "Create a vault",
-    text: "Create one or more onchain vaults. Each vault has its own agent signer, budget, policy, and activity trail.",
+    title: "Start with a vault",
+    text: "A Paybound vault is the agent's USDC work budget on Arc. Each vault has its own signer, policy, and trail.",
   },
   {
     target: '[data-tour="wallet"]',
-    title: "Connect the owner wallet",
-    text: "The owner wallet funds vaults, changes policy, withdraws unused USDC, and approves risky agent actions.",
+    title: "Connect the owner",
+    text: "The owner wallet funds the vault, edits limits, withdraws unused USDC, and approves risky spend.",
   },
   {
     target: '[data-tour="summary"]',
-    title: "Check the active vault",
-    text: "Use the summary strip to confirm which vault is selected, whether policy is live, and whether the app is connected to Arc.",
+    title: "Confirm the budget",
+    text: "The summary keeps the active vault, policy state, and pending approvals visible before the agent spends.",
   },
   {
     target: '[data-tour="policy"]',
-    title: "Assign the agent",
-    text: "Set the agent signer, then define max spend, daily limits, and the approved recipient address.",
+    title: "Set policy",
+    text: "Assign the agent signer, set spend limits, and approve the vendors the agent is allowed to pay.",
+  },
+  {
+    target: '[data-tour="vendors"]',
+    title: "Build a vendor job",
+    text: "Pick an approved vendor to create the agent's spend request with amount, reason, and expected result.",
   },
   {
     target: '[data-tour="treasury"]',
@@ -142,18 +183,18 @@ const TOUR_STEPS = [
   },
   {
     target: '[data-tour="payments"]',
-    title: "Run a payment",
-    text: "Use the test harness to initiate the same onchain payment flow that an agent signer or backend wallet would call.",
+    title: "Let policy decide",
+    text: "Safe vendor payments execute. Spend above policy becomes a reviewable approval request.",
   },
   {
     target: '[data-tour="approvals"]',
     title: "Review risky spend",
-    text: "Payments outside policy become onchain approval requests. The owner can approve or reject them without leaving the app.",
+    text: "The owner can approve, reject, or cancel a risky agent payment without leaving the workspace.",
   },
   {
     target: '[data-tour="trail"]',
-    title: "Audit the result",
-    text: "Read the compact log or expand the full trail to inspect deposits, policy decisions, and transaction hashes.",
+    title: "Read the trail",
+    text: "The trail explains what the agent tried to buy, how policy decided, and which Arc transaction or request records it.",
   },
 ];
 
@@ -255,16 +296,28 @@ function normalizeVault(vault) {
 
 function normalizeRecipient(recipient) {
   if (typeof recipient === "string") {
+    const vendor = findCatalogVendor(recipient);
     return {
-      name: ethers.isAddress(recipient) ? shortHash(recipient) : recipient,
+      name: vendor?.name || (ethers.isAddress(recipient) ? shortHash(recipient) : recipient),
       address: recipient,
+      category: vendor?.category || "Service",
+      price: Number(vendor?.price || 0.42),
+      description: vendor?.description || "Approved service provider.",
+      result: vendor?.result || "Service result returned to the agent.",
+      sla: vendor?.sla || "live",
     };
   }
 
   const address = recipient?.address || recipient?.value || "";
+  const vendor = findCatalogVendor(address) || findCatalogVendor(recipient?.name);
   return {
-    name: recipient?.name || (ethers.isAddress(address) ? shortHash(address) : address || "Unnamed recipient"),
+    name: recipient?.name || vendor?.name || (ethers.isAddress(address) ? shortHash(address) : address || "Unnamed vendor"),
     address,
+    category: recipient?.category || vendor?.category || "Service",
+    price: Number(recipient?.price ?? vendor?.price ?? 0.42),
+    description: recipient?.description || vendor?.description || "Approved service provider.",
+    result: recipient?.result || vendor?.result || "Service result returned to the agent.",
+    sla: recipient?.sla || vendor?.sla || "live",
   };
 }
 
@@ -274,10 +327,20 @@ function normalizeRequest(request) {
     recipient: request.recipient || "",
     amount: Number(request.amount || 0),
     metadataHash: request.metadataHash || "",
+    reason: request.reason || "",
+    policyReason: request.policyReason || "",
+    vendorName: request.vendorName || "",
     status: Number(request.status || 0),
     createdAt: Number(request.createdAt || 0),
     decidedAt: Number(request.decidedAt || 0),
   };
+}
+
+function findCatalogVendor(value = "") {
+  const needle = String(value).toLowerCase();
+  return DEFAULT_VENDOR_CATALOG.find(
+    (vendor) => vendor.address.toLowerCase() === needle || vendor.name.toLowerCase() === needle,
+  );
 }
 
 function saveState() {
@@ -413,7 +476,7 @@ function renderRecipients() {
     if (vault.recipients.length === 0) {
       const empty = document.createElement("span");
       empty.className = "empty-state";
-      empty.textContent = "No approved recipients yet.";
+      empty.textContent = "No approved vendors yet. Add a service address before the agent can pay.";
       list.appendChild(empty);
       return;
     }
@@ -438,6 +501,132 @@ function renderRecipients() {
   }
 }
 
+function renderVendorDesk() {
+  const grid = $("vendorGrid");
+  const suggested = $("suggestedVendorGrid");
+  if (!grid || !suggested) return;
+
+  const vault = activeVault();
+  const vendors = activeVendors(vault);
+  const recommendations = localPreviewAllowed() ? suggestedVendors(vault) : [];
+  grid.innerHTML = "";
+  suggested.innerHTML = "";
+
+  setText("vendorCount", `${vendors.length} approved`);
+  setText(
+    "vendorSpendHint",
+    vendors.length ? `${formatUsdc(totalVendorGuidePrice(vendors))} USDC guide basket` : "Approve a service first",
+  );
+
+  if (vendors.length === 0) {
+    const empty = document.createElement("article");
+    empty.className = "vendor-card empty-vendor";
+    empty.innerHTML =
+      '<span class="empty-state">No approved vendors yet. Add a real service provider address in Spend policy, then build the first agent job here.</span>';
+    grid.appendChild(empty);
+  } else {
+    vendors.forEach((vendor) => grid.appendChild(createVendorCard(vendor, true)));
+  }
+
+  recommendations.forEach((vendor) => suggested.appendChild(createVendorCard(vendor, false)));
+  if (recommendations.length === 0) {
+    const empty = document.createElement("article");
+    empty.className = "vendor-card empty-vendor";
+    empty.innerHTML = localPreviewAllowed()
+      ? '<span class="empty-state">All suggested demo vendors are already approved.</span>'
+      : '<span class="empty-state">Suggested demo vendors are hidden on public deploys. Use a real 0x service address on Arc Testnet.</span>';
+    suggested.appendChild(empty);
+  }
+}
+
+function createVendorCard(vendor, approved) {
+  const card = document.createElement("article");
+  card.className = `vendor-card${approved ? " approved" : ""}`;
+  card.dataset.vendorAddress = vendor.address;
+
+  const heading = document.createElement("div");
+  heading.className = "vendor-heading";
+  const title = document.createElement("strong");
+  title.textContent = vendor.name;
+  const badge = document.createElement("span");
+  badge.textContent = approved ? "Approved" : "Suggested";
+  heading.append(title, badge);
+
+  const meta = document.createElement("div");
+  meta.className = "vendor-meta";
+  meta.innerHTML = `<span>${vendor.category}</span><span>${formatUsdc(vendor.price)} USDC</span><span>${vendor.sla}</span>`;
+
+  const description = document.createElement("p");
+  description.textContent = vendor.description;
+
+  const result = document.createElement("small");
+  result.textContent = vendor.result;
+
+  const actions = document.createElement("div");
+  actions.className = "vendor-actions";
+
+  if (approved) {
+    const use = document.createElement("button");
+    use.type = "button";
+    use.className = "secondary-button";
+    use.textContent = "Build job";
+    use.dataset.vendorAction = "use";
+    use.dataset.vendorAddress = vendor.address;
+    actions.appendChild(use);
+  } else {
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "small-button";
+    add.textContent = "Fill policy";
+    add.dataset.vendorAction = "fill";
+    add.dataset.vendorAddress = vendor.address;
+    actions.appendChild(add);
+  }
+
+  card.append(heading, meta, description, result, actions);
+  return card;
+}
+
+function totalVendorGuidePrice(vendors) {
+  return vendors.reduce((sum, vendor) => sum + Number(vendor.price || 0), 0);
+}
+
+function renderPaymentPreview() {
+  const vault = activeVault();
+  const recipient = $("paymentRecipient")?.value || activeVendors(vault)[0]?.address || "";
+  const amount = Number($("paymentAmount")?.value || 0);
+  const vendor = recipient ? vendorForAddress(vault, recipient) : null;
+  const policy = recipient && amount > 0 ? evaluatePaymentPolicy(vault, recipient, amount) : null;
+
+  setText("selectedVendorName", vendor?.name || "No vendor selected");
+  setText("selectedVendorPrice", vendor ? `${formatUsdc(vendor.price)} USDC guide price` : "Choose an approved vendor");
+  setText("selectedVendorResult", vendor?.result || "The agent result will appear in the audit trail after execution.");
+  setText("policyOutcome", policy ? (policy.allowed ? "Will execute" : "Needs approval") : "Waiting for job");
+  setText("policyReason", policy?.reason || "Select a vendor and amount to preview the policy decision.");
+
+  const stack = $("policyCheckStack");
+  if (!stack) return;
+  stack.innerHTML = "";
+
+  const checks = policy?.checks || [
+    { label: "Vendor approved", ok: false },
+    { label: "Per-action limit", ok: false },
+    { label: "Daily budget", ok: false },
+    { label: "Vault balance", ok: false },
+  ];
+
+  checks.forEach((check) => {
+    const item = document.createElement("div");
+    item.className = `policy-check ${check.ok ? "ok" : "warn"}`;
+    const label = document.createElement("span");
+    label.textContent = check.label;
+    const value = document.createElement("strong");
+    value.textContent = check.ok ? "Pass" : check.fail || "Pending";
+    item.append(label, value);
+    stack.appendChild(item);
+  });
+}
+
 function recipientDisplay(recipient) {
   const normalized = normalizeRecipient(recipient);
   if (ethers.isAddress(normalized.address)) {
@@ -452,6 +641,64 @@ function recipientAllowed(vault, address) {
   );
 }
 
+function vendorForAddress(vault, address) {
+  const normalizedAddress = String(address || "").toLowerCase();
+  const vendor = (vault.recipients || [])
+    .map(normalizeRecipient)
+    .find((recipient) => recipient.address.toLowerCase() === normalizedAddress);
+  return vendor || findCatalogVendor(address) || normalizeRecipient(address);
+}
+
+function activeVendors(vault = activeVault()) {
+  return (vault.recipients || []).map(normalizeRecipient);
+}
+
+function suggestedVendors(vault = activeVault()) {
+  const approved = new Set(activeVendors(vault).map((vendor) => vendor.address.toLowerCase()));
+  return DEFAULT_VENDOR_CATALOG.filter((vendor) => !approved.has(vendor.address.toLowerCase()));
+}
+
+function evaluatePaymentPolicy(vault, recipient, amount) {
+  const checks = [
+    {
+      key: "paused",
+      label: "Vault active",
+      ok: !vault.paused,
+      fail: "Vault is paused",
+    },
+    {
+      key: "recipient",
+      label: "Vendor approved",
+      ok: recipientAllowed(vault, recipient),
+      fail: "Vendor is not on the allowlist",
+    },
+    {
+      key: "maxSpend",
+      label: "Per-action limit",
+      ok: Number(amount) <= Number(vault.maxSpend || 0),
+      fail: `Above ${formatUsdc(vault.maxSpend)} USDC per-action limit`,
+    },
+    {
+      key: "daily",
+      label: "Daily budget",
+      ok: Number(amount) <= Number(vault.availableToday ?? Math.max(vault.dailyLimit - vault.spentToday, 0)),
+      fail: "Above today's remaining budget",
+    },
+    {
+      key: "balance",
+      label: "Vault balance",
+      ok: Number(amount) <= Number(vault.balance || 0),
+      fail: "Vault balance is too low",
+    },
+  ];
+
+  return {
+    checks,
+    allowed: checks.every((check) => check.ok),
+    reason: checks.find((check) => !check.ok)?.fail || "All policy checks passed",
+  };
+}
+
 function renderActivity() {
   const log = $("activityLog");
   if (!log) return;
@@ -462,7 +709,8 @@ function renderActivity() {
   if (activeVault().activity.length === 0) {
     const empty = document.createElement("article");
     empty.className = "activity-item";
-    empty.innerHTML = '<span class="empty-state">No activity yet.</span>';
+    empty.innerHTML =
+      '<span class="empty-state">No spending trail yet. Run the first vendor payment or approval request to create a readable audit record.</span>';
     log.appendChild(empty);
     return;
   }
@@ -528,7 +776,7 @@ function renderFullActivity() {
   if (activity.length === 0) {
     const empty = document.createElement("article");
     empty.className = "full-log-row empty-log-row";
-    empty.innerHTML = '<span class="empty-state">No activity yet.</span>';
+    empty.innerHTML = '<span class="empty-state">No spending trail yet. Agent actions, policy decisions, and Arc hashes will appear here.</span>';
     log.appendChild(empty);
   }
 
@@ -547,7 +795,9 @@ function renderVaultList() {
   if (!Array.isArray(state.vaults) || state.vaults.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = state.connectedAccount ? "No onchain vaults yet." : "Connect a wallet to load vaults.";
+    empty.textContent = state.connectedAccount
+      ? "No Paybound vaults yet. Click New to create the first onchain vault."
+      : "Connect the owner wallet to load or create Paybound vaults.";
     list.appendChild(empty);
     return;
   }
@@ -591,7 +841,8 @@ function renderApprovalQueue() {
   if (requests.length === 0) {
     const empty = document.createElement("article");
     empty.className = "approval-row";
-    empty.innerHTML = '<span class="empty-state">No approval requests yet. Run a payment above the policy limit to create one.</span>';
+    empty.innerHTML =
+      '<span class="empty-state">No approval requests yet. Create a vendor payment above policy to see the owner review flow.</span>';
     queue.appendChild(empty);
     return;
   }
@@ -608,10 +859,12 @@ function renderApprovalQueue() {
     main.className = "approval-main";
     const title = document.createElement("strong");
     title.className = requestStateClass(request.status);
-    title.textContent = requestStatusLabel(request.status);
+    title.textContent = `${requestStatusLabel(request.status)} · ${request.vendorName || vendorForAddress(vault, request.recipient).name}`;
     const recipient = document.createElement("span");
-    recipient.textContent = ethers.isAddress(request.recipient) ? `Recipient ${shortHash(request.recipient)}` : "Unknown recipient";
-    main.append(title, recipient);
+    recipient.textContent = request.reason || request.policyReason || (ethers.isAddress(request.recipient) ? `Vendor ${shortHash(request.recipient)}` : request.recipient);
+    const policy = document.createElement("small");
+    policy.textContent = request.policyReason || "Waiting for owner decision";
+    main.append(title, recipient, policy);
 
     const amount = document.createElement("div");
     amount.className = "approval-amount";
@@ -687,7 +940,7 @@ function render() {
   setText("factoryStatus", hasFactory() ? `Factory ${shortHash(state.factoryAddress)}` : "Factory missing");
   setText("ownerRole", state.connectedAccount ? shortHash(state.connectedAccount) : "Connect wallet");
   setText("agentRole", ethers.isAddress(vault.agentSigner) ? shortHash(vault.agentSigner) : vault.agentSigner);
-  setText("recipientRole", vault.recipients[0] ? recipientDisplay(vault.recipients[0]) : "No recipient");
+  setText("recipientRole", vault.recipients[0] ? recipientDisplay(vault.recipients[0]) : "No vendor");
 
   setValue("factoryAddress", state.factoryAddress);
   setValue("agentName", vault.agentName);
@@ -754,6 +1007,8 @@ function render() {
   renderTransactionProgress();
   renderVaultList();
   renderRecipients();
+  renderVendorDesk();
+  renderPaymentPreview();
   renderApprovalQueue();
   renderActivity();
   renderFullActivity();
@@ -867,6 +1122,7 @@ function renderAgentConnection(vault, onchain) {
 function renderLaunchChecklist(vault, onchain) {
   const signerReady = ethers.isAddress(vault.agentSigner) && vault.agentSigner !== ethers.ZeroAddress;
   const policyReady = vault.recipients.length > 0 && vault.maxSpend > 0 && vault.dailyLimit > 0;
+  const vendorJobReady = Boolean($("paymentRecipient")?.value) && Number($("paymentAmount")?.value || 0) > 0;
   const setupReady = state.agentSetup.envCopied && state.agentSetup.mcpCopied;
   const checks = {
     wallet: Boolean(state.connectedAccount),
@@ -874,6 +1130,7 @@ function renderLaunchChecklist(vault, onchain) {
     signer: signerReady,
     funded: onchain && vault.balance > 0,
     policy: onchain && policyReady,
+    vendor: onchain && vendorJobReady,
     agent: onchain && signerReady && setupReady,
   };
   const completed = Object.values(checks).filter(Boolean).length;
@@ -884,7 +1141,8 @@ function renderLaunchChecklist(vault, onchain) {
   setText("checkVault", checks.vault ? shortHash(vault.address) : "Create or select");
   setText("checkSigner", checks.signer ? shortHash(vault.agentSigner) : "Assign signer");
   setText("checkFunded", checks.funded ? `${formatUsdc(vault.balance)} USDC` : "Deposit USDC");
-  setText("checkPolicy", checks.policy ? `${vault.recipients.length} recipient${vault.recipients.length === 1 ? "" : "s"}` : "Add recipient and limits");
+  setText("checkPolicy", checks.policy ? `${vault.recipients.length} vendor${vault.recipients.length === 1 ? "" : "s"}` : "Add vendor and limits");
+  setText("checkVendor", checks.vendor ? "Job prepared" : "Pick a vendor");
   setText("checkAgent", checks.agent ? "Ready to verify" : "Copy configuration");
 
   const bar = $("launchProgressBar");
@@ -1223,7 +1481,7 @@ function describeError(error) {
   if (/NotOwner/i.test(message)) return "Only the vault owner can perform this action. Connect the owner wallet.";
   if (/NotAgentOrOwner/i.test(message)) return "The connected signer is not authorized as this vault's owner or agent.";
   if (/PausedVault/i.test(message)) return "This vault is paused. Unpause it before sending a payment.";
-  if (/RecipientNotAllowed/i.test(message)) return "This recipient is not approved by the active vault policy.";
+  if (/RecipientNotAllowed/i.test(message)) return "This vendor is not approved by the active vault policy.";
   if (/MaxSpendExceeded/i.test(message)) return "The requested amount exceeds the per-action spending limit.";
   if (/DailyLimitExceeded/i.test(message)) return "The requested amount exceeds today's remaining budget.";
   if (/RequestNotPending/i.test(message)) return "This approval request has already been resolved.";
@@ -1609,7 +1867,7 @@ async function updatePolicy(event) {
   if (maxSpend < 0 || dailyLimit < 0) throw new Error("Policy amounts cannot be negative");
 
   if (isOnchainVault(vault)) {
-    if (recipient && !ethers.isAddress(recipient)) throw new Error("Approved recipient must be a full 0x address");
+    if (recipient && !ethers.isAddress(recipient)) throw new Error("Approved vendor must be a full 0x address");
     await ensureWallet();
     const contract = getVaultContract(vault.address, signer);
     requestWalletConfirmation(`Set ${formatUsdc(maxSpend)} USDC per action and ${formatUsdc(dailyLimit)} USDC daily`);
@@ -1626,19 +1884,17 @@ async function updatePolicy(event) {
       recipient &&
       !vault.recipients.some((item) => normalizeRecipient(item).address.toLowerCase() === recipient.toLowerCase())
     ) {
-      requestWalletConfirmation(`Approve ${shortHash(recipient)} as a payment recipient`);
+      const vendor = normalizeRecipient({ ...(findCatalogVendor(recipient) || {}), name: recipientName || findCatalogVendor(recipient)?.name, address: recipient });
+      requestWalletConfirmation(`Approve ${shortHash(recipient)} as a vendor`);
       const allowTx = await contract.setRecipientAllowed(recipient, true);
       addActivity({
-        title: "Recipient approval submitted",
-        detail: `${shortHash(recipient)} added to allowlist`,
+        title: "Vendor approval submitted",
+        detail: `${shortHash(recipient)} added to the vendor allowlist`,
         hash: allowTx.hash,
         state: "warn",
       });
-      await confirmTransaction(allowTx, `Recipient ${shortHash(recipient)} approved`);
-      vault.recipients.push({
-        name: recipientName || shortHash(recipient),
-        address: ethers.getAddress(recipient),
-      });
+      await confirmTransaction(allowTx, `Vendor ${shortHash(recipient)} approved`);
+      vault.recipients.push({ ...vendor, address: ethers.getAddress(recipient) });
     }
 
     vault.maxSpend = maxSpend;
@@ -1652,10 +1908,13 @@ async function updatePolicy(event) {
       recipient &&
       !vault.recipients.some((item) => normalizeRecipient(item).address.toLowerCase() === recipient.toLowerCase())
     ) {
-      vault.recipients.push({
-        name: recipientName || (ethers.isAddress(recipient) ? shortHash(recipient) : recipient),
-        address: recipient,
-      });
+      vault.recipients.push(
+        normalizeRecipient({
+          ...(findCatalogVendor(recipient) || {}),
+          name: recipientName || findCatalogVendor(recipient)?.name,
+          address: recipient,
+        }),
+      );
     }
   }
 
@@ -1676,21 +1935,30 @@ async function initiatePayment(event) {
   const recipient = $("paymentRecipient").value;
   const amount = Number($("paymentAmount").value || 0);
   const reason = $("paymentReason").value.trim() || "Agent payment";
-  const hash = await metadataHash({ recipient, amount, reason, createdAt: new Date().toISOString() });
+  const vendor = vendorForAddress(vault, recipient);
+  const policy = evaluatePaymentPolicy(vault, recipient, amount);
+  const hash = await metadataHash({
+    vendor: vendor.name,
+    recipient,
+    amount,
+    reason,
+    policyReason: policy.reason,
+    createdAt: new Date().toISOString(),
+  });
 
-  if (!recipient) throw new Error("Add an approved recipient before testing agent spend");
+  if (!recipient) throw new Error("Add an approved vendor before testing agent spend");
   if (amount <= 0) throw new Error("Payment amount must be greater than zero");
 
   if (isOnchainVault(vault)) {
-    if (!ethers.isAddress(recipient)) throw new Error("Payment recipient must be a full 0x address");
+    if (!ethers.isAddress(recipient)) throw new Error("Payment vendor must be a full 0x address");
     await ensureWallet();
-    requestWalletConfirmation(`Request ${formatUsdc(amount)} USDC payment to ${shortHash(recipient)}`);
+    requestWalletConfirmation(`Request ${formatUsdc(amount)} USDC payment to ${vendor.name}`);
     const tx = await getVaultContract(vault.address, signer).initiatePayment(recipient, toUnits(amount), hash);
     setText("decisionTitle", "Submitted");
-    setText("decisionText", "Waiting for Arc Testnet finality.");
+    setText("decisionText", `${vendor.name} payment is waiting for Arc Testnet finality.`);
     addActivity({
-      title: "Payment submitted",
-      detail: `${formatUsdc(amount)} USDC to ${shortHash(recipient)}`,
+      title: "Agent payment submitted",
+      detail: `${formatUsdc(amount)} USDC to ${vendor.name}. Reason: ${reason}`,
       hash: tx.hash,
       state: "warn",
     });
@@ -1701,10 +1969,10 @@ async function initiatePayment(event) {
 
     if (outcome.executed) {
       setText("decisionTitle", "Executed");
-      setText("decisionText", "Recipient, amount, and daily budget passed onchain policy checks.");
+      setText("decisionText", `${vendor.name} was paid. Result expected: ${vendor.result}`);
       addActivity({
-        title: "Payment executed",
-        detail: `${formatUsdc(amount)} USDC paid to ${shortHash(recipient)}`,
+        title: "Vendor paid",
+        detail: `${vendor.name} received ${formatUsdc(amount)} USDC. Result: ${vendor.result}`,
         hash: tx.hash,
         state: "ok",
       });
@@ -1712,18 +1980,22 @@ async function initiatePayment(event) {
     }
 
     setText("decisionTitle", "Approval required");
-    setText("decisionText", outcome.requestId ? `Request #${outcome.requestId} was queued onchain.` : "Payment was queued for approval.");
+    setText(
+      "decisionText",
+      outcome.requestId
+        ? `Request #${outcome.requestId} was queued onchain for ${vendor.name}.`
+        : `${vendor.name} payment was queued for approval.`,
+    );
     addActivity({
       title: "Approval requested",
-      detail: `${formatUsdc(amount)} USDC to ${shortHash(recipient)} requires owner approval`,
+      detail: `${formatUsdc(amount)} USDC to ${vendor.name} requires owner approval. ${policy.reason}`,
       hash: tx.hash,
       state: "warn",
     });
     return;
   }
 
-  const available = vault.dailyLimit - vault.spentToday;
-  if (vault.paused || !recipientAllowed(vault, recipient) || amount > vault.maxSpend || amount > available) {
+  if (!policy.allowed) {
     const requestId = String((vault.pendingRequests || []).length + 1);
     vault.pendingRequests ||= [];
     vault.pendingRequests.push(
@@ -1732,6 +2004,9 @@ async function initiatePayment(event) {
         recipient,
         amount,
         metadataHash: hash,
+        reason,
+        policyReason: policy.reason,
+        vendorName: vendor.name,
         status: 1,
         createdAt: Math.floor(Date.now() / 1000),
         decidedAt: 0,
@@ -1739,10 +2014,10 @@ async function initiatePayment(event) {
     );
 
     setText("decisionTitle", "Approval required");
-    setText("decisionText", `Request #${requestId} was queued for owner review.`);
+    setText("decisionText", `Request #${requestId} was queued. ${policy.reason}.`);
     addActivity({
       title: "Approval requested",
-      detail: `Request #${requestId}: ${formatUsdc(amount)} USDC to ${recipient}`,
+      detail: `Request #${requestId}: ${vendor.name} asks for ${formatUsdc(amount)} USDC. ${policy.reason}`,
       hash,
       state: "warn",
     });
@@ -1752,10 +2027,10 @@ async function initiatePayment(event) {
   vault.balance = Math.max(vault.balance - amount, 0);
   vault.spentToday += amount;
   setText("decisionTitle", "Executed");
-  setText("decisionText", "Recipient, amount, and daily budget passed policy checks.");
+  setText("decisionText", `${vendor.name} returned a result: ${vendor.result}`);
   addActivity({
-    title: "Payment executed",
-    detail: `${formatUsdc(amount)} USDC paid to ${recipient}`,
+    title: "Vendor paid",
+    detail: `${vendor.name} received ${formatUsdc(amount)} USDC. Result: ${vendor.result}`,
     hash,
     state: "ok",
   });
@@ -1764,7 +2039,7 @@ async function initiatePayment(event) {
 async function runRiskyDemo() {
   const vault = activeVault();
   if (!hasActiveVault()) throw new Error("Create or select a vault before running the demo");
-  if (!vault.recipients.length) throw new Error("Add an approved recipient before running the demo");
+  if (!vault.recipients.length) throw new Error("Add an approved vendor before creating an approval request");
 
   const recipient = normalizeRecipient(vault.recipients[0]);
   const riskyAmount = vault.maxSpend > 0 ? vault.maxSpend + 1 : Math.max(vault.dailyLimit + 1, 1);
@@ -1772,7 +2047,7 @@ async function runRiskyDemo() {
   const select = $("paymentRecipient");
   if (select) select.value = recipient.address;
   setValue("paymentAmount", riskyAmount);
-  setValue("paymentReason", "Demo: request premium data above policy limit");
+  setValue("paymentReason", `Demo: ${recipient.name} spend above policy limit`);
 
   await initiatePayment({ preventDefault() {} });
   document.querySelector("#approvals")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1863,26 +2138,57 @@ function removeRecipient(event) {
   requestConfirm({
     action: "removeRecipient",
     recipient: button.dataset.recipient,
-    eyebrow: "Remove recipient",
+    eyebrow: "Remove vendor",
     title: `Remove ${shortHash(button.dataset.recipient)}?`,
-    text: "The agent will no longer be able to pay this recipient automatically.",
+    text: "The agent will no longer be able to pay this vendor automatically.",
     acceptLabel: "Remove",
   });
+}
+
+function handleVendorAction(event) {
+  const button = event.target.closest("[data-vendor-action]");
+  if (!button) return;
+
+  const vendor = findCatalogVendor(button.dataset.vendorAddress);
+  if (!vendor) return;
+
+  if (button.dataset.vendorAction === "fill") {
+    setValue("recipientNameInput", vendor.name);
+    setValue("recipientInput", vendor.address);
+    setValue("paymentAmount", vendor.price);
+    setValue("paymentReason", `Use ${vendor.name} for the current agent task`);
+    document.querySelector("#policy")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    renderPaymentPreview();
+    return;
+  }
+
+  setPaymentJob(vendor);
+  document.querySelector("#payments")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function setPaymentJob(vendor) {
+  const select = $("paymentRecipient");
+  if (select) select.value = vendor.address;
+  setValue("paymentAmount", vendor.price);
+  setValue("paymentReason", `Agent job: ${vendor.description}`);
+  setText("decisionTitle", "Job prepared");
+  setText("decisionText", `${vendor.name} is ready for a policy check. Expected result: ${vendor.result}`);
+  renderPaymentPreview();
 }
 
 async function removeRecipientConfirmed(recipientToRemove) {
   const vault = activeVault();
   if (isOnchainVault(vault) && ethers.isAddress(recipientToRemove)) {
     await ensureWallet();
-    requestWalletConfirmation(`Remove ${shortHash(recipientToRemove)} from approved recipients`);
+    requestWalletConfirmation(`Remove ${shortHash(recipientToRemove)} from approved vendors`);
     const tx = await getVaultContract(vault.address, signer).setRecipientAllowed(recipientToRemove, false);
     addActivity({
-      title: "Recipient removal submitted",
-      detail: `${shortHash(recipientToRemove)} will be removed from allowlist`,
+      title: "Vendor removal submitted",
+      detail: `${shortHash(recipientToRemove)} will be removed from the allowlist`,
       hash: tx.hash,
       state: "warn",
     });
-    await confirmTransaction(tx, `Recipient ${shortHash(recipientToRemove)} removed`);
+    await confirmTransaction(tx, `Vendor ${shortHash(recipientToRemove)} removed`);
   }
 
   vault.recipients = vault.recipients.filter(
@@ -1890,8 +2196,8 @@ async function removeRecipientConfirmed(recipientToRemove) {
   );
   syncActiveMetadata();
   addActivity({
-    title: "Recipient removed",
-    detail: `${shortHash(recipientToRemove)} removed from allowlist`,
+    title: "Vendor removed",
+    detail: `${shortHash(recipientToRemove)} removed from the vendor allowlist`,
     hash: "local",
     state: "warn",
   });
@@ -1902,7 +2208,7 @@ async function refreshRequests() {
     await refreshOnchainVaults();
     addActivity({
       title: "Requests refreshed",
-      detail: "Approval queue synced from Arc Testnet",
+      detail: "Approval inbox synced from Arc Testnet",
       hash: "local",
       state: "ok",
     });
@@ -1949,7 +2255,7 @@ async function executeRequestAction(action, requestId) {
 
     addActivity({
       title: requestActionTitle(action),
-      detail: `Request #${requestId} for ${formatUsdc(request.amount)} USDC`,
+      detail: `Request #${requestId}: ${request.vendorName || vendorForAddress(vault, request.recipient).name} for ${formatUsdc(request.amount)} USDC`,
       hash: tx.hash,
       state: action === "reject" || action === "cancel" ? "risk" : "ok",
     });
@@ -1967,7 +2273,10 @@ async function executeRequestAction(action, requestId) {
 
   addActivity({
     title: requestActionTitle(action),
-    detail: `Request #${requestId} for ${formatUsdc(request.amount)} USDC`,
+    detail:
+      action === "approve"
+        ? `Request #${requestId}: ${request.vendorName || vendorForAddress(vault, request.recipient).name} paid ${formatUsdc(request.amount)} USDC after owner approval`
+        : `Request #${requestId}: ${request.vendorName || vendorForAddress(vault, request.recipient).name} was ${action}ed`,
     hash: "local",
     state: action === "reject" || action === "cancel" ? "risk" : "ok",
   });
@@ -2112,6 +2421,8 @@ bind("nextLogPage", "click", () => changeLogPage(1));
 bind("createVault", "click", () => runAction(createVault));
 bind("vaultList", "click", selectVault);
 bind("recipientList", "click", removeRecipient);
+bind("vendorGrid", "click", handleVendorAction);
+bind("suggestedVendorGrid", "click", handleVendorAction);
 bind("approvalQueue", "click", handleRequestAction);
 bind("cancelConfirm", "click", closeConfirm);
 bind("acceptConfirm", "click", acceptConfirm);
@@ -2122,6 +2433,10 @@ bind("nextTour", "click", () => changeTourStep(1));
 bind("skipTour", "click", () => closeTour(true));
 
 document.addEventListener("click", applyDepositPreset);
+["paymentRecipient", "paymentAmount"].forEach((id) => {
+  const element = $(id);
+  if (element) element.addEventListener("input", renderPaymentPreview);
+});
 window.addEventListener("resize", () => updateTourPosition(false));
 window.addEventListener("scroll", () => updateTourPosition(false), true);
 window.addEventListener("keydown", (event) => {

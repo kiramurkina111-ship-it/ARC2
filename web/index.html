@@ -15,7 +15,7 @@
       content="Bounded USDC payments, human approvals, and an onchain trail for AI agents on Arc."
     />
     <link rel="icon" href="./assets/paybound-mark.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=0.3.1" />
+    <link rel="stylesheet" href="./styles.css?v=0.4.1" />
   </head>
   <body class="landing">
     <header class="site-header">
@@ -36,8 +36,8 @@
           <span class="eyebrow">USDC policy layer for autonomous work</span>
           <h1>Paybound</h1>
           <p>
-            Give an AI agent a real USDC budget on Arc. It can pay approved services,
-            queue risky actions for approval, and leave a readable onchain settlement trail.
+            Give an AI agent a real USDC budget on Arc. It can pay approved vendors,
+            queue risky actions for approval, and leave a readable settlement trail.
           </p>
           <div class="hero-actions">
             <a class="primary-button" href="./vault.html">Create a vault</a>
@@ -46,7 +46,7 @@
         <div class="hero-terminal" aria-label="Live policy preview">
           <span class="eyebrow">Policy decision</span>
           <div class="terminal-line"><span>agent</span> requests 0.42 USDC</div>
-          <div class="terminal-line"><span>recipient</span> Verified Data API</div>
+          <div class="terminal-line"><span>vendor</span> Verified Data API</div>
           <div class="terminal-line"><span>rule</span> max 2.00 USDC per action</div>
           <div class="terminal-line ok"><span>result</span> executed or queued</div>
         </div>
@@ -58,7 +58,7 @@
           <h2>A control plane for AI agents with money</h2>
           <p>
             The vault sits between the user, the agent, and service providers.
-            Safe payments execute immediately. Risky actions become approval requests.
+            Safe vendor payments execute immediately. Risky actions become approval requests.
           </p>
         </div>
         <div class="feature-grid">
@@ -70,7 +70,7 @@
           <article class="feature-card">
             <span>02</span>
             <h3>Constrain</h3>
-            <p>Set recipients, per-action limits, daily caps, and pause controls.</p>
+            <p>Set vendors, per-action limits, daily caps, and pause controls.</p>
           </article>
           <article class="feature-card">
             <span>03</span>
@@ -104,6 +104,6 @@
       </section>
     </main>
 
-    <script src="./home.js?v=0.3.1"></script>
+    <script src="./home.js?v=0.4.1"></script>
   </body>
 </html>

@@ -10,7 +10,7 @@
     />
     <meta name="theme-color" content="#06111d" />
     <link rel="icon" href="./assets/paybound-mark.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=0.3.1" />
+    <link rel="stylesheet" href="./styles.css?v=0.4.1" />
   </head>
   <body>
     <div class="app-shell">
@@ -25,9 +25,11 @@
         <nav class="nav" aria-label="Application sections">
           <a class="active" href="#vault">Vault</a>
           <a href="#policy">Policy</a>
+          <a href="#vendors">Vendors</a>
           <a href="#agent-connect">Agent</a>
           <a href="#payments">Payments</a>
           <a href="#approvals">Approvals</a>
+          <a href="#onchain">Onchain</a>
           <a href="#trail">Trail</a>
         </nav>
         <section class="vault-switcher" aria-label="Vault selector" data-tour="vault-switcher">
@@ -85,7 +87,7 @@
               <span class="eyebrow">Launch checklist</span>
               <h2 id="launchChecklistTitle">First agent payment</h2>
             </div>
-            <strong id="launchProgressLabel">1 of 6 ready</strong>
+            <strong id="launchProgressLabel">1 of 7 ready</strong>
           </div>
           <div class="checklist-progress" aria-hidden="true"><span id="launchProgressBar"></span></div>
           <div class="checklist-grid">
@@ -102,10 +104,13 @@
               <span class="checklist-index">04</span><span><strong>Fund vault</strong><small id="checkFunded">Deposit USDC</small></span>
             </button>
             <button class="checklist-item" type="button" data-checklist-key="policy" data-checklist-target="#policy">
-              <span class="checklist-index">05</span><span><strong>Spend policy</strong><small id="checkPolicy">Add recipient</small></span>
+              <span class="checklist-index">05</span><span><strong>Spend policy</strong><small id="checkPolicy">Add vendor</small></span>
+            </button>
+            <button class="checklist-item" type="button" data-checklist-key="vendor" data-checklist-target="#vendors">
+              <span class="checklist-index">06</span><span><strong>Vendor job</strong><small id="checkVendor">Prepare spend</small></span>
             </button>
             <button class="checklist-item" type="button" data-checklist-key="agent" data-checklist-target="#agent-connect">
-              <span class="checklist-index">06</span><span><strong>Agent setup</strong><small id="checkAgent">Copy configuration</small></span>
+              <span class="checklist-index">07</span><span><strong>Agent setup</strong><small id="checkAgent">Copy configuration</small></span>
             </button>
           </div>
         </section>
@@ -141,16 +146,16 @@
             <p>Initiates payments or requests approval.</p>
           </div>
           <div>
-            <span class="eyebrow">Recipient</span>
-            <strong id="recipientRole">No recipient</strong>
-            <p>Receives USDC when policy allows the payment.</p>
+            <span class="eyebrow">Vendor</span>
+            <strong id="recipientRole">No vendor</strong>
+            <p>Receives USDC when the vault policy allows the payment.</p>
           </div>
         </section>
 
         <section class="agent-connect-band" id="agent-connect" data-tour="agent-connect">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.3</span>
+              <span class="eyebrow">v0.4</span>
               <h2>Connect agent</h2>
             </div>
             <span id="agentConnectionStatus" class="status-pill">Select a vault</span>
@@ -325,29 +330,51 @@ AGENT_PRIVATE_KEY=</pre>
               <input id="dailyLimit" name="dailyLimit" type="number" min="0" step="0.01" value="15" />
             </label>
             <label>
-              Recipient name
+              Vendor name
               <input id="recipientNameInput" name="recipientNameInput" placeholder="Verified Data API" />
             </label>
             <label>
-              Recipient address
-              <input id="recipientInput" name="recipientInput" placeholder="0x recipient address" />
+              Vendor address
+              <input id="recipientInput" name="recipientInput" placeholder="0x vendor address" />
             </label>
             <button class="secondary-button wide" type="submit">Update policy</button>
             <div class="approved-services">
-              <span class="eyebrow">Approved services</span>
+              <span class="eyebrow">Approved vendors</span>
               <div id="recipientList" class="recipient-list"></div>
             </div>
           </form>
         </section>
 
+        <section class="vendor-band" id="vendors" data-tour="vendors">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">v0.4</span>
+              <h2>Vendor workspace</h2>
+              <p class="section-copy">
+                Pick the services your agent can buy. Approved vendors can execute inside policy;
+                higher-risk spend goes to the owner inbox.
+              </p>
+            </div>
+            <div class="vendor-summary">
+              <strong id="vendorCount">0 approved</strong>
+              <span id="vendorSpendHint">No vendors yet</span>
+            </div>
+          </div>
+          <div id="vendorGrid" class="vendor-grid" aria-label="Approved vendors"></div>
+          <details class="suggested-vendors">
+            <summary>Suggested demo vendors</summary>
+            <div id="suggestedVendorGrid" class="vendor-grid"></div>
+          </details>
+        </section>
+
         <section class="payments-band" id="payments" data-tour="payments">
           <form class="payment-form" id="paymentForm">
             <div class="panel-heading">
-              <span class="eyebrow">Test harness</span>
-              <h2>Initiate agent spend</h2>
+              <span class="eyebrow">Agent job</span>
+              <h2>Run vendor payment</h2>
               <p>
-                Submit the same policy flow an agent signer or backend wallet would call. Safe payments execute;
-                risky payments move into the approval queue.
+                Build the same spend request an agent signer or backend wallet would call. Safe vendor payments
+                execute; risky payments move into the approval inbox.
               </p>
             </div>
             <label>
@@ -364,7 +391,7 @@ AGENT_PRIVATE_KEY=</pre>
             </label>
             <div class="button-row">
               <button class="primary-button" type="submit">Run policy check</button>
-              <button id="runRiskyDemo" class="secondary-button" type="button">Run risky demo</button>
+              <button id="runRiskyDemo" class="secondary-button" type="button">Create approval request</button>
               <button id="pauseVault" class="danger-button" type="button">Pause vault</button>
             </div>
           </form>
@@ -374,22 +401,33 @@ AGENT_PRIVATE_KEY=</pre>
               <span class="eyebrow">Policy engine</span>
               <h2 id="decisionTitle">Ready</h2>
             </div>
-            <p id="decisionText">Approved recipients and spend limits are active.</p>
+            <p id="decisionText">Approved vendors and spend limits are active.</p>
+            <div class="selected-vendor">
+              <span class="eyebrow">Selected vendor</span>
+              <strong id="selectedVendorName">No vendor selected</strong>
+              <span id="selectedVendorPrice">Choose an approved vendor</span>
+              <small id="selectedVendorResult">The agent result will appear in the audit trail after execution.</small>
+            </div>
             <div class="rule-stack">
-              <div><span>Recipient allowlist</span><strong id="recipientRule">2 active</strong></div>
+              <div><span>Vendor allowlist</span><strong id="recipientRule">2 active</strong></div>
               <div><span>Per-action ceiling</span><strong id="perActionRule">2.00 USDC</strong></div>
               <div><span>Daily budget</span><strong id="dailyRule">15.00 USDC</strong></div>
             </div>
+            <div class="policy-outcome">
+              <span id="policyOutcome">Waiting for job</span>
+              <strong id="policyReason">Select a vendor and amount to preview the policy decision.</strong>
+            </div>
+            <div id="policyCheckStack" class="policy-check-stack"></div>
           </div>
         </section>
 
         <section class="approval-band" id="approvals" data-tour="approvals">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.2</span>
-              <h2>Approval queue</h2>
+              <span class="eyebrow">v0.4</span>
+              <h2>Approval inbox</h2>
               <p class="section-copy">
-                Payments outside policy become onchain requests. Review them, approve safe spend, reject bad spend,
+                Payments outside policy become reviewable requests. Approve safe spend, reject bad spend,
                 or let the agent cancel its own request.
               </p>
             </div>
@@ -398,11 +436,46 @@ AGENT_PRIVATE_KEY=</pre>
           <div id="approvalQueue" class="approval-queue" aria-live="polite"></div>
         </section>
 
+        <section class="onchain-band" id="onchain">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">What happens onchain</span>
+              <h2>Policy is enforced by the vault contract</h2>
+              <p class="section-copy">
+                Paybound keeps task text and vendor context readable in the UI. The contract stores the enforceable
+                payment rules and links each payment or approval request to a metadata hash.
+              </p>
+            </div>
+          </div>
+          <div class="onchain-grid">
+            <article>
+              <span>01</span>
+              <strong>Vault holds USDC</strong>
+              <p>The owner deposits USDC into an AgentVault on Arc Testnet.</p>
+            </article>
+            <article>
+              <span>02</span>
+              <strong>Policy gates spend</strong>
+              <p>Approved vendor, max action, daily limit, pause state, and balance are checked before payment.</p>
+            </article>
+            <article>
+              <span>03</span>
+              <strong>Risk goes to approval</strong>
+              <p>Spend outside policy becomes an onchain request for the owner to approve, reject, or cancel.</p>
+            </article>
+            <article>
+              <span>04</span>
+              <strong>Trail links to Arcscan</strong>
+              <p>Payment and request hashes connect the readable UI trail to Arc settlement.</p>
+            </article>
+          </div>
+        </section>
+
         <section class="trail-band" id="trail" data-tour="trail">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">Activity</span>
-              <h2>Activity log</h2>
+              <span class="eyebrow">Readable audit</span>
+              <h2>Agent spending trail</h2>
             </div>
             <div class="button-row">
               <button id="toggleFullLog" class="small-button" type="button">View full log</button>
@@ -449,6 +522,6 @@ AGENT_PRIVATE_KEY=</pre>
         </div>
       </section>
     </div>
-    <script type="module" src="./app.js?v=0.3.1"></script>
+    <script type="module" src="./app.js?v=0.4.1"></script>
   </body>
 </html>
