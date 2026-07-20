@@ -6,7 +6,7 @@ It includes:
 
 - a typed `AgentVaultClient` SDK;
 - a local MCP server over stdio;
-- an executable payment example;
+- an executable task-and-payment example;
 - safe environment-based signer configuration.
 
 No new contract deployment is required. The current AgentVault already supports agent-initiated payments and approval requests.
@@ -58,14 +58,18 @@ With the environment variables loaded, run a read-only MCP round-trip check:
 npm run smoke:mcp
 ```
 
-## Run The Example Agent Flow
+## Run The Example Agent Task
 
 Add an approved vendor or recipient address to `.env`:
 
 ```txt
+TASK_ID=example-research-001
+TASK_TITLE=German fintech lead research
+TASK_BRIEF=Find 25 fintech leads in Germany. Use approved vendors only, keep spend under 5 USDC, and return source links.
 RECIPIENT_ADDRESS=0x...
 PAYMENT_AMOUNT_USDC=0.42
 PAYMENT_REASON=Buy data for the research task
+SERVICE_NAME=Verified Data API
 ```
 
 Then run:
@@ -76,11 +80,12 @@ npm run example
 
 The example:
 
-1. reads vault balance and policy;
-2. checks the vendor/recipient allowlist;
-3. calls `initiatePayment`;
-4. reports whether the payment executed or entered the approval queue;
-5. prints the Arcscan transaction URL.
+1. loads a concrete agent task brief;
+2. reads vault balance and policy;
+3. checks the vendor/recipient allowlist;
+4. calls `initiatePayment`;
+5. reports whether the payment executed or entered the approval queue;
+6. prints a small result artifact summary that can be matched to the payment metadata.
 
 ## Connect The MCP Server
 
