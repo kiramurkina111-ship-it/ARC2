@@ -134,6 +134,28 @@ v0.4 turns the payment test harness into a clearer agent work scenario without c
 
 No new onchain deployment is required for v0.4.
 
+## v0.5 Agent Task Execution
+
+v0.5 turns Paybound from a payment console into a task execution surface. The contract deployment stays the same.
+
+- new Agent task runner on the app page;
+- task brief, task budget, and active task status;
+- step-by-step execution timeline: task created, budget checked, vendor selected, policy checked, result or approval;
+- task flow prepares the existing vendor payment form instead of hiding the payment primitive;
+- local preview can complete the task and show a readable result artifact;
+- onchain vaults stop at `Ready to submit`, so the user still confirms the real Arc transaction through the wallet;
+- Agent Kit example now describes a full task-and-payment flow;
+- cache-busting was bumped to `v=0.5.1` for Vercel deployments.
+
+Polish pass in `v=0.5.1`:
+
+- task launch checklist item;
+- clearer task status labels;
+- explicit `Submit prepared payment` handoff into the Payments section;
+- richer result artifact with vendor, spend, policy, and metadata hash receipt.
+
+No new onchain deployment is required for v0.5. Reuse the existing factory and vault contracts.
+
 ## Launch Flow
 
 1. Deploy `AgentVaultFactory` through Remix using `ONCHAIN_LAUNCH_GUIDE.md`.
