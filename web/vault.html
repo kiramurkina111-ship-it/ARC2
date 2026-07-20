@@ -10,7 +10,7 @@
     />
     <meta name="theme-color" content="#06111d" />
     <link rel="icon" href="./assets/paybound-mark.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=0.4.1" />
+    <link rel="stylesheet" href="./styles.css?v=0.5.1" />
   </head>
   <body>
     <div class="app-shell">
@@ -25,6 +25,7 @@
         <nav class="nav" aria-label="Application sections">
           <a class="active" href="#vault">Vault</a>
           <a href="#policy">Policy</a>
+          <a href="#tasks">Tasks</a>
           <a href="#vendors">Vendors</a>
           <a href="#agent-connect">Agent</a>
           <a href="#payments">Payments</a>
@@ -62,7 +63,7 @@
             <span class="eyebrow">Control plane</span>
             <h1>Configure agent spending in one place</h1>
             <p class="page-lede">
-              Select a vault, define policy, test a payment, and read the trail without leaving the workspace.
+              Create a task, define policy, run vendor spend, and read the trail without leaving the workspace.
             </p>
           </div>
           <div class="top-actions" data-tour="wallet">
@@ -87,7 +88,7 @@
               <span class="eyebrow">Launch checklist</span>
               <h2 id="launchChecklistTitle">First agent payment</h2>
             </div>
-            <strong id="launchProgressLabel">1 of 7 ready</strong>
+            <strong id="launchProgressLabel">1 of 8 ready</strong>
           </div>
           <div class="checklist-progress" aria-hidden="true"><span id="launchProgressBar"></span></div>
           <div class="checklist-grid">
@@ -109,8 +110,11 @@
             <button class="checklist-item" type="button" data-checklist-key="vendor" data-checklist-target="#vendors">
               <span class="checklist-index">06</span><span><strong>Vendor job</strong><small id="checkVendor">Prepare spend</small></span>
             </button>
+            <button class="checklist-item" type="button" data-checklist-key="task" data-checklist-target="#tasks">
+              <span class="checklist-index">07</span><span><strong>Agent task</strong><small id="checkTask">Run task</small></span>
+            </button>
             <button class="checklist-item" type="button" data-checklist-key="agent" data-checklist-target="#agent-connect">
-              <span class="checklist-index">07</span><span><strong>Agent setup</strong><small id="checkAgent">Copy configuration</small></span>
+              <span class="checklist-index">08</span><span><strong>Agent setup</strong><small id="checkAgent">Copy configuration</small></span>
             </button>
           </div>
         </section>
@@ -152,10 +156,76 @@
           </div>
         </section>
 
+        <section class="task-band" id="tasks" data-tour="tasks">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">v0.5</span>
+              <h2>Agent task runner</h2>
+              <p class="section-copy">
+                Give the agent a concrete job. Paybound turns it into a bounded vendor spend flow:
+                budget check, vendor selection, policy decision, and a readable result artifact.
+              </p>
+            </div>
+            <span id="taskStatus" class="status-pill">Ready for task</span>
+          </div>
+          <div class="task-grid">
+            <form class="task-composer" id="taskForm">
+              <div class="panel-heading">
+                <span class="eyebrow">Task brief</span>
+                <h2>Tell the agent what to do</h2>
+              </div>
+              <label>
+                Task name
+                <input id="taskTitle" name="taskTitle" value="German fintech lead research" />
+              </label>
+              <label>
+                Task brief
+                <textarea id="taskBrief" name="taskBrief" rows="5">Find 25 fintech leads in Germany. Use approved vendors only, keep spend under 5 USDC, and return source links.</textarea>
+              </label>
+              <label>
+                Task budget
+                <input id="taskBudget" name="taskBudget" type="number" min="0.01" step="0.01" value="5" />
+              </label>
+              <div class="button-row">
+                <button class="primary-button" type="submit">Start task</button>
+                <button id="applyTaskTemplate" class="secondary-button" type="button">Use demo brief</button>
+                <button id="resetAgentTask" class="small-button" type="button">Reset</button>
+              </div>
+            </form>
+            <div class="task-control-panel">
+              <div class="task-metrics" aria-label="Active task summary">
+                <div>
+                  <span class="eyebrow">Active task</span>
+                  <strong id="taskActiveTitle">No active task</strong>
+                </div>
+                <div>
+                  <span class="eyebrow">Budget</span>
+                  <strong id="taskBudgetLabel">5.00 USDC task budget</strong>
+                </div>
+                <div>
+                  <span class="eyebrow">Vendor</span>
+                  <strong id="taskVendorLabel">No approved vendor</strong>
+                </div>
+                <div>
+                  <span class="eyebrow">Spend</span>
+                  <strong id="taskSpendLabel">No spend prepared</strong>
+                </div>
+              </div>
+              <div class="task-actions">
+                <button id="runTaskStep" class="secondary-button" type="button">Run next step</button>
+                <button id="runTaskAutopilot" class="primary-button" type="button">Run preview loop</button>
+                <button id="submitPreparedPayment" class="small-button" type="button">Submit prepared payment</button>
+              </div>
+              <div id="taskTimeline" class="task-timeline" aria-live="polite"></div>
+            </div>
+          </div>
+          <div id="taskArtifact" class="task-artifact" aria-live="polite"></div>
+        </section>
+
         <section class="agent-connect-band" id="agent-connect" data-tour="agent-connect">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.4</span>
+              <span class="eyebrow">v0.5</span>
               <h2>Connect agent</h2>
             </div>
             <span id="agentConnectionStatus" class="status-pill">Select a vault</span>
@@ -194,11 +264,11 @@
               </div>
               <div>
                 <span>Network</span>
-                <strong>Arc Testnet · 5042002</strong>
+                <strong>Arc Testnet - 5042002</strong>
               </div>
               <div>
                 <span>Transport</span>
-                <strong>Local MCP · stdio</strong>
+                <strong>Local MCP - stdio</strong>
               </div>
             </div>
             <div class="integration-config">
@@ -348,7 +418,7 @@ AGENT_PRIVATE_KEY=</pre>
         <section class="vendor-band" id="vendors" data-tour="vendors">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.4</span>
+              <span class="eyebrow">v0.5</span>
               <h2>Vendor workspace</h2>
               <p class="section-copy">
                 Pick the services your agent can buy. Approved vendors can execute inside policy;
@@ -424,7 +494,7 @@ AGENT_PRIVATE_KEY=</pre>
         <section class="approval-band" id="approvals" data-tour="approvals">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.4</span>
+              <span class="eyebrow">v0.5</span>
               <h2>Approval inbox</h2>
               <p class="section-copy">
                 Payments outside policy become reviewable requests. Approve safe spend, reject bad spend,
@@ -522,6 +592,6 @@ AGENT_PRIVATE_KEY=</pre>
         </div>
       </section>
     </div>
-    <script type="module" src="./app.js?v=0.4.1"></script>
+    <script type="module" src="./app.js?v=0.5.1"></script>
   </body>
 </html>
