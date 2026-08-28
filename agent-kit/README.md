@@ -5,6 +5,7 @@ The Paybound Agent Kit lets an AI agent read and use an existing AgentVault on A
 It includes:
 
 - a typed `AgentVaultClient` SDK;
+- a high-level `AgentTaskRunner` with a read-only policy plan;
 - a local MCP server over stdio;
 - an executable task-and-payment example;
 - safe environment-based signer configuration.
@@ -66,6 +67,7 @@ Add an approved vendor or recipient address to `.env`:
 TASK_ID=example-research-001
 TASK_TITLE=German fintech lead research
 TASK_BRIEF=Find 25 fintech leads in Germany. Use approved vendors only, keep spend under 5 USDC, and return source links.
+TASK_BUDGET_USDC=5.00
 RECIPIENT_ADDRESS=0x...
 PAYMENT_AMOUNT_USDC=0.42
 PAYMENT_REASON=Buy data for the research task
@@ -81,11 +83,11 @@ npm run example
 The example:
 
 1. loads a concrete agent task brief;
-2. reads vault balance and policy;
-3. checks the vendor/recipient allowlist;
-4. calls `initiatePayment`;
-5. reports whether the payment executed or entered the approval queue;
-6. prints a small result artifact summary that can be matched to the payment metadata.
+2. builds a complete run plan without spending;
+3. checks the signer, vault state, task budget, recipient, action limit, daily budget, and balance;
+4. blocks invalid runs before a transaction is attempted;
+5. settles ready runs or creates the normal onchain approval request for reviewable spend;
+6. prints a result artifact summary that can be matched to the payment metadata.
 
 ## Connect The MCP Server
 
@@ -103,6 +105,7 @@ Available tools:
 | --- | --- |
 | `get_vault_status` | Read balance, limits, signer authorization, pause state, and daily budget. |
 | `check_recipient` | Check whether an address is allowed for automatic payment. |
+| `plan_task_payment` | Preview the complete task and vault policy without spending. |
 | `request_payment` | Execute policy-safe spend or create an approval request. |
 | `create_approval_request` | Always create a human approval request. |
 | `get_payment_request` | Read the current onchain request status. |
