@@ -1,4 +1,4 @@
-# Подключение AI-агента к Paybound — v0.3
+# Подключение AI-агента к Paybound — v0.6
 
 Этот гайд подключает реального AI-агента к уже существующему vault на Arc Testnet.
 
@@ -83,11 +83,12 @@ AGENT_PRIVATE_KEY=0x...
 ```powershell
 npm run typecheck
 npm run build
+npm run doctor
 ```
 
 Если kit пишет, что signer не authorized, проверь, что address от `AGENT_PRIVATE_KEY` совпадает с `agent()` в vault.
 
-## 6. Запустить example payment
+## 6. Запустить пример Agent Run
 
 Добавь в `.env`:
 
@@ -96,6 +97,9 @@ RECIPIENT_ADDRESS=0x...
 PAYMENT_AMOUNT_USDC=0.42
 PAYMENT_REASON=Buy data for the research task
 TASK_ID=example-research-001
+TASK_TITLE=German fintech lead research
+TASK_BRIEF=Find 25 fintech leads in Germany and return source links.
+TASK_BUDGET_USDC=5.00
 SERVICE_NAME=Example Data Provider
 ```
 
@@ -152,7 +156,7 @@ get_payment_request
 cancel_payment_request
 ```
 
-## 8. Проверить полный v0.3 flow
+## 8. Проверить полный v0.6 flow
 
 Попроси подключённого агента:
 

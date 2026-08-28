@@ -156,6 +156,25 @@ Polish pass in `v=0.5.1`:
 
 No new onchain deployment is required for v0.5. Reuse the existing factory and vault contracts.
 
+## v0.6 Agent Run Center
+
+v0.6 turns the single task demo into a reusable operating surface for bounded agent work.
+
+- three editable runbooks for research, compliance, and dataset quality work;
+- explicit vendor selection, task budget, and planned vendor spend;
+- policy preview before a run is created;
+- multiple runs per vault with active, review, completed, and cancelled states;
+- run history with filters, open, and run-again actions;
+- per-run timeline, budget remaining, vendor, spend, and stable run ID;
+- approval-linked runs resume after the owner approves or stop after rejection;
+- result artifacts can be copied as a receipt or exported as JSON;
+- Agent Kit adds `AgentTaskRunner` with a read-only task plan before settlement;
+- MCP adds `plan_task_payment` so an agent can inspect every budget and policy check before spending;
+- landing and workspace copy now describe repeatable agent runs instead of a one-off payment demo;
+- Vercel cache-busting is set to `v=0.6.0`.
+
+The deployed contracts are unchanged. v0.6 uses each payment metadata hash and local run ID to connect the higher-level task workflow to the existing AgentVault settlement primitive.
+
 ## Launch Flow
 
 1. Deploy `AgentVaultFactory` through Remix using `ONCHAIN_LAUNCH_GUIDE.md`.
