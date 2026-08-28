@@ -15,7 +15,7 @@
       content="Bounded USDC payments, human approvals, and an onchain trail for AI agents on Arc."
     />
     <link rel="icon" href="./assets/paybound-mark.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=0.5.1" />
+    <link rel="stylesheet" href="./styles.css?v=0.6.0" />
   </head>
   <body class="landing">
     <header class="site-header">
@@ -36,19 +36,20 @@
           <span class="eyebrow">USDC policy layer for autonomous work</span>
           <h1>Paybound</h1>
           <p>
-            Give an AI agent a real USDC budget on Arc. It can pay approved vendors,
-            queue risky actions for approval, and leave a readable settlement trail.
+            Give an AI agent repeatable work and a real USDC budget on Arc. Every run stays
+            inside your vendor policy and returns a result with a readable settlement trail.
           </p>
           <div class="hero-actions">
             <a class="primary-button" href="./vault.html">Create a vault</a>
           </div>
         </div>
         <div class="hero-terminal" aria-label="Live policy preview">
-          <span class="eyebrow">Policy decision</span>
-          <div class="terminal-line"><span>agent</span> requests 0.42 USDC</div>
+          <span class="eyebrow">Live agent run</span>
+          <div class="terminal-line"><span>task</span> Lead research</div>
           <div class="terminal-line"><span>vendor</span> Verified Data API</div>
-          <div class="terminal-line"><span>rule</span> max 2.00 USDC per action</div>
-          <div class="terminal-line ok"><span>result</span> executed or queued</div>
+          <div class="terminal-line"><span>spend</span> 0.42 / 5.00 USDC</div>
+          <div class="terminal-line"><span>policy</span> all checks passed</div>
+          <div class="terminal-line ok"><span>artifact</span> result + receipt ready</div>
         </div>
       </section>
 
@@ -64,18 +65,18 @@
         <div class="feature-grid">
           <article class="feature-card">
             <span>01</span>
-            <h3>Fund</h3>
-            <p>Deposit USDC into an agent-owned work budget on Arc Testnet.</p>
+            <h3>Run</h3>
+            <p>Create repeatable tasks with a vendor, expected spend, and a bounded run budget.</p>
           </article>
           <article class="feature-card">
             <span>02</span>
-            <h3>Constrain</h3>
-            <p>Set vendors, per-action limits, daily caps, and pause controls.</p>
+            <h3>Control</h3>
+            <p>Enforce approved vendors, per-action limits, daily caps, and owner review.</p>
           </article>
           <article class="feature-card">
             <span>03</span>
             <h3>Settle</h3>
-            <p>Every payment gets a metadata hash, policy decision, and transaction trail.</p>
+            <p>Keep the result, policy decision, metadata hash, and payment receipt together.</p>
           </article>
         </div>
       </section>
@@ -83,27 +84,27 @@
       <section class="flow-band">
         <div class="flow-step">
           <span class="step-index">1</span>
-          <strong>User sets budget</strong>
-          <p>25 USDC, approved vendors, 2 USDC max per action.</p>
+          <strong>User defines a run</strong>
+          <p>Task brief, vendor, planned spend, and a hard USDC budget.</p>
         </div>
         <div class="flow-step">
           <span class="step-index">2</span>
-          <strong>Agent requests spend</strong>
-          <p>The agent tries to buy data, verification, or compute.</p>
+          <strong>Agent checks constraints</strong>
+          <p>Vault balance, allowlist, action ceiling, and daily budget.</p>
         </div>
         <div class="flow-step">
           <span class="step-index">3</span>
-          <strong>Vault enforces policy</strong>
-          <p>Allowed payments execute. Risky ones wait for human approval.</p>
+          <strong>Vault settles or pauses</strong>
+          <p>Allowed spend executes. Risky spend waits for owner approval.</p>
         </div>
         <div class="flow-step">
           <span class="step-index">4</span>
-          <strong>Trail stays readable</strong>
-          <p>Users see who was paid, why, and how the policy decided.</p>
+          <strong>Result stays auditable</strong>
+          <p>The artifact, receipt, and Arc transaction stay linked to the run.</p>
         </div>
       </section>
     </main>
 
-    <script src="./home.js?v=0.5.1"></script>
+    <script src="./home.js?v=0.6.0"></script>
   </body>
 </html>

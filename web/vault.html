@@ -10,7 +10,7 @@
     />
     <meta name="theme-color" content="#06111d" />
     <link rel="icon" href="./assets/paybound-mark.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=0.5.1" />
+    <link rel="stylesheet" href="./styles.css?v=0.6.0" />
   </head>
   <body>
     <div class="app-shell">
@@ -63,7 +63,7 @@
             <span class="eyebrow">Control plane</span>
             <h1>Configure agent spending in one place</h1>
             <p class="page-lede">
-              Create a task, define policy, run vendor spend, and read the trail without leaving the workspace.
+              Queue agent work, enforce USDC policy, and keep every result connected to its spend trail.
             </p>
           </div>
           <div class="top-actions" data-tour="wallet">
@@ -159,20 +159,37 @@
         <section class="task-band" id="tasks" data-tour="tasks">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.5</span>
-              <h2>Agent task runner</h2>
+              <span class="eyebrow">v0.6</span>
+              <h2>Agent Run Center</h2>
               <p class="section-copy">
-                Give the agent a concrete job. Paybound turns it into a bounded vendor spend flow:
-                budget check, vendor selection, policy decision, and a readable result artifact.
+                Turn repeatable work into controlled runs. Choose a vendor, cap the budget, follow every
+                decision, and keep the result beside its payment receipt.
               </p>
             </div>
             <span id="taskStatus" class="status-pill">Ready for task</span>
           </div>
+
+          <div class="run-stats" aria-label="Run center summary">
+            <div><span class="eyebrow">Runs</span><strong id="taskRunCount">0 total</strong></div>
+            <div><span class="eyebrow">Open</span><strong id="taskOpenCount">0 active</strong></div>
+            <div><span class="eyebrow">Completed spend</span><strong id="taskSpentTotal">0.00 USDC</strong></div>
+            <div><span class="eyebrow">Current vault</span><strong id="taskVaultLabel">No vault</strong></div>
+          </div>
+
+          <div class="template-heading">
+            <div>
+              <span class="eyebrow">Runbooks</span>
+              <h3>Start from a reusable task</h3>
+            </div>
+            <span>Templates set the brief, vendor, and expected spend. You can edit everything before launch.</span>
+          </div>
+          <div id="taskTemplateGrid" class="task-template-grid" aria-label="Task templates"></div>
+
           <div class="task-grid">
             <form class="task-composer" id="taskForm">
               <div class="panel-heading">
-                <span class="eyebrow">Task brief</span>
-                <h2>Tell the agent what to do</h2>
+                <span class="eyebrow">New run</span>
+                <h2>Define the work boundary</h2>
               </div>
               <label>
                 Task name
@@ -182,21 +199,36 @@
                 Task brief
                 <textarea id="taskBrief" name="taskBrief" rows="5">Find 25 fintech leads in Germany. Use approved vendors only, keep spend under 5 USDC, and return source links.</textarea>
               </label>
+              <div class="field-pair">
+                <label>
+                  Task budget
+                  <input id="taskBudget" name="taskBudget" type="number" min="0.01" step="0.01" value="5" />
+                </label>
+                <label>
+                  Planned spend
+                  <input id="taskAmount" name="taskAmount" type="number" min="0.01" step="0.01" value="0.42" />
+                </label>
+              </div>
               <label>
-                Task budget
-                <input id="taskBudget" name="taskBudget" type="number" min="0.01" step="0.01" value="5" />
+                Service provider
+                <select id="taskVendor" name="taskVendor">
+                  <option value="">Approve a vendor first</option>
+                </select>
               </label>
+              <div id="taskComposerPolicy" class="composer-policy" aria-live="polite">
+                <span class="state-dot"></span>
+                <span>Select a vault and vendor to preview the run policy.</span>
+              </div>
               <div class="button-row">
-                <button class="primary-button" type="submit">Start task</button>
-                <button id="applyTaskTemplate" class="secondary-button" type="button">Use demo brief</button>
-                <button id="resetAgentTask" class="small-button" type="button">Reset</button>
+                <button class="primary-button" type="submit">Create run</button>
+                <button id="resetAgentTask" class="small-button" type="button">Clear form</button>
               </div>
             </form>
             <div class="task-control-panel">
               <div class="task-metrics" aria-label="Active task summary">
                 <div>
-                  <span class="eyebrow">Active task</span>
-                  <strong id="taskActiveTitle">No active task</strong>
+                  <span class="eyebrow">Active run</span>
+                  <strong id="taskActiveTitle">No active run</strong>
                 </div>
                 <div>
                   <span class="eyebrow">Budget</span>
@@ -210,22 +242,60 @@
                   <span class="eyebrow">Spend</span>
                   <strong id="taskSpendLabel">No spend prepared</strong>
                 </div>
+                <div>
+                  <span class="eyebrow">Run ID</span>
+                  <strong id="taskRunId">Not started</strong>
+                </div>
+                <div>
+                  <span class="eyebrow">Budget left</span>
+                  <strong id="taskBudgetRemaining">0.00 USDC</strong>
+                </div>
               </div>
               <div class="task-actions">
                 <button id="runTaskStep" class="secondary-button" type="button">Run next step</button>
                 <button id="runTaskAutopilot" class="primary-button" type="button">Run preview loop</button>
                 <button id="submitPreparedPayment" class="small-button" type="button">Submit prepared payment</button>
+                <button id="cancelTaskRun" class="small-button" type="button">Cancel run</button>
               </div>
               <div id="taskTimeline" class="task-timeline" aria-live="polite"></div>
             </div>
           </div>
-          <div id="taskArtifact" class="task-artifact" aria-live="polite"></div>
+
+          <div class="task-artifact-shell">
+            <div class="artifact-toolbar">
+              <div>
+                <span class="eyebrow">Deliverable</span>
+                <strong>Result and spend receipt</strong>
+              </div>
+              <div class="button-row">
+                <button id="copyTaskReceipt" class="small-button" type="button">Copy receipt</button>
+                <button id="exportTaskResult" class="small-button" type="button">Export JSON</button>
+              </div>
+            </div>
+            <div id="taskArtifact" class="task-artifact" aria-live="polite"></div>
+          </div>
+
+          <div class="task-history">
+            <div class="task-history-heading">
+              <div>
+                <span class="eyebrow">Operations</span>
+                <h3>Run history</h3>
+              </div>
+              <div class="task-filters" id="taskFilters" aria-label="Filter task runs">
+                <button class="active" type="button" data-task-filter="all">All</button>
+                <button type="button" data-task-filter="open">Open</button>
+                <button type="button" data-task-filter="review">Review</button>
+                <button type="button" data-task-filter="completed">Completed</button>
+              </div>
+            </div>
+            <div id="taskRunList" class="task-run-list" aria-live="polite"></div>
+          </div>
         </section>
 
         <section class="agent-connect-band" id="agent-connect" data-tour="agent-connect">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.5</span>
+              <span class="eyebrow">Agent kit</span>
               <h2>Connect agent</h2>
             </div>
             <span id="agentConnectionStatus" class="status-pill">Select a vault</span>
@@ -418,7 +488,7 @@ AGENT_PRIVATE_KEY=</pre>
         <section class="vendor-band" id="vendors" data-tour="vendors">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.5</span>
+              <span class="eyebrow">Vendor policy</span>
               <h2>Vendor workspace</h2>
               <p class="section-copy">
                 Pick the services your agent can buy. Approved vendors can execute inside policy;
@@ -494,7 +564,7 @@ AGENT_PRIVATE_KEY=</pre>
         <section class="approval-band" id="approvals" data-tour="approvals">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">v0.5</span>
+              <span class="eyebrow">Human review</span>
               <h2>Approval inbox</h2>
               <p class="section-copy">
                 Payments outside policy become reviewable requests. Approve safe spend, reject bad spend,
@@ -592,6 +662,6 @@ AGENT_PRIVATE_KEY=</pre>
         </div>
       </section>
     </div>
-    <script type="module" src="./app.js?v=0.5.1"></script>
+    <script type="module" src="./app.js?v=0.6.0"></script>
   </body>
 </html>

@@ -145,13 +145,48 @@ const EMPTY_VAULT = {
   activity: [],
 };
 
+const TASK_TEMPLATES = [
+  {
+    id: "lead-research",
+    label: "Lead research",
+    title: "German fintech lead research",
+    brief: "Find 25 fintech leads in Germany. Use approved vendors only, keep spend under 5 USDC, and return source links.",
+    budget: 5,
+    amount: 0.42,
+    vendorName: "Verified Data API",
+    outcome: "Verified lead list with sources",
+  },
+  {
+    id: "vendor-risk",
+    label: "Vendor risk review",
+    title: "Vendor compliance review",
+    brief: "Review the selected service provider for sanctions, reputation, and payment risk. Return an allow or deny recommendation with evidence.",
+    budget: 2,
+    amount: 0.3,
+    vendorName: "KYC Risk Check",
+    outcome: "Risk score and signed review note",
+  },
+  {
+    id: "dataset-qa",
+    label: "Dataset QA",
+    title: "Paid dataset quality check",
+    brief: "Buy the approved market dataset, validate its schema and freshness, and return a concise quality report before downstream use.",
+    budget: 4,
+    amount: 2.4,
+    vendorName: "Premium Market Dataset",
+    outcome: "Dataset receipt and quality report",
+  },
+];
+
 const DEFAULT_AGENT_TASK = {
   id: "task-default",
   status: "idle",
+  templateId: TASK_TEMPLATES[0].id,
   title: "German fintech lead research",
   brief: "Find 25 fintech leads in Germany. Use approved vendors only, keep spend under 5 USDC, and return source links.",
   budget: 5,
   vendorAddress: "",
+  requestedAmount: 0.42,
   amount: 0,
   timeline: [],
   result: null,
@@ -185,8 +220,8 @@ const TOUR_STEPS = [
   },
   {
     target: '[data-tour="tasks"]',
-    title: "Run an agent task",
-    text: "Give the agent a concrete job. Paybound shows budget checks, vendor selection, policy decisions, and the result artifact.",
+    title: "Operate agent runs",
+    text: "Choose a runbook, vendor, and USDC boundary. Paybound keeps the queue, policy decisions, result artifact, and receipt together.",
   },
   {
     target: '[data-tour="treasury"]',
@@ -262,6 +297,14 @@ function normalizeState(stored) {
       ? storedVaults
       : clone(DEFAULT_SIM_VAULTS)
     : storedVaults.filter((vault) => vault?.source === "onchain");
+  const legacyTask = normalizeTask(stored.activeTask || DEFAULT_AGENT_TASK);
+  const storedTaskRuns = Array.isArray(stored.taskRuns) ? stored.taskRuns.map(normalizeTask) : [];
+  const taskRuns = storedTaskRuns.length
+    ? storedTaskRuns
+    : legacyTask.status !== "idle"
+      ? [legacyTask]
+      : [];
+  const requestedActiveTaskId = stored.activeTaskId || legacyTask.id;
   const next = {
     connectedAccount: stored.connectedAccount || null,
     factoryAddress: stored.factoryAddress || DEFAULT_FACTORY_ADDRESS,
@@ -278,7 +321,14 @@ function normalizeState(stored) {
       mcpCopied: Boolean(stored.agentSetup?.mcpCopied),
       doctorCopied: Boolean(stored.agentSetup?.doctorCopied),
     },
-    activeTask: normalizeTask(stored.activeTask),
+    taskRuns,
+    activeTaskId: taskRuns.some((task) => task.id === requestedActiveTaskId)
+      ? requestedActiveTaskId
+      : taskRuns[0]?.id || "",
+    taskFilter: ["all", "open", "review", "completed"].includes(stored.taskFilter)
+      ? stored.taskFilter
+      : "all",
+    selectedTaskTemplate: stored.selectedTaskTemplate || DEFAULT_AGENT_TASK.templateId,
     transaction: null,
     confirm: null,
     busy: false,
@@ -290,6 +340,12 @@ function normalizeState(stored) {
   if (!next.vaults.some((vault) => vault.id === next.activeVaultId)) {
     next.activeVaultId = next.vaults[0]?.id || "";
   }
+  const initialVault = next.vaults.find((vault) => vault.id === next.activeVaultId);
+  next.taskRuns = next.taskRuns.map((task) => ({
+    ...task,
+    vaultId: task.vaultId || initialVault?.id || "",
+    vaultAddress: task.vaultAddress || initialVault?.address || "",
+  }));
   return next;
 }
 
@@ -348,6 +404,7 @@ function normalizeRequest(request) {
     reason: request.reason || "",
     policyReason: request.policyReason || "",
     vendorName: request.vendorName || "",
+    taskId: request.taskId || "",
     status: Number(request.status || 0),
     createdAt: Number(request.createdAt || 0),
     decidedAt: Number(request.decidedAt || 0),
@@ -358,15 +415,23 @@ function normalizeTask(task = {}) {
   return {
     id: task.id || `task-${Date.now().toString(36)}`,
     status: task.status || "idle",
+    templateId: task.templateId || "custom",
     title: task.title || DEFAULT_AGENT_TASK.title,
     brief: task.brief || DEFAULT_AGENT_TASK.brief,
     budget: Number(task.budget || DEFAULT_AGENT_TASK.budget),
     vendorAddress: task.vendorAddress || "",
+    requestedAmount: Number(task.requestedAmount || task.amount || DEFAULT_AGENT_TASK.requestedAmount),
     amount: Number(task.amount || 0),
     timeline: Array.isArray(task.timeline) ? task.timeline.map(normalizeTaskStep) : [],
     result: task.result || null,
+    resultPolicy: task.resultPolicy || "",
+    requiresApproval: Boolean(task.requiresApproval),
+    vaultId: task.vaultId || "",
+    vaultAddress: task.vaultAddress || "",
+    txHash: task.txHash || "",
     createdAt: task.createdAt || "",
     updatedAt: task.updatedAt || "",
+    completedAt: task.completedAt || "",
   };
 }
 
@@ -399,6 +464,22 @@ function activeVault() {
     state.activeVaultId = vault.id;
   }
   return vault;
+}
+
+function activeTask() {
+  return state.taskRuns.find((task) => task.id === state.activeTaskId) || DEFAULT_AGENT_TASK;
+}
+
+function taskRunsForVault(vault = activeVault()) {
+  return state.taskRuns.filter((task) => {
+    if (task.vaultId) return task.vaultId === vault.id;
+    if (task.vaultAddress && vault.address) return task.vaultAddress.toLowerCase() === vault.address.toLowerCase();
+    return true;
+  });
+}
+
+function isTaskTerminal(task = activeTask()) {
+  return ["result_ready", "cancelled"].includes(task.status);
 }
 
 function hasActiveVault() {
@@ -746,35 +827,157 @@ function taskStep(title, detail, state = "ok") {
   return { title, detail, state, time: nowLabel() };
 }
 
+function taskTemplate(templateId) {
+  return TASK_TEMPLATES.find((template) => template.id === templateId) || TASK_TEMPLATES[0];
+}
+
 function selectedTaskVendor(vault = activeVault()) {
-  const task = state.activeTask;
+  const task = activeTask();
   const vendors = activeVendors(vault);
   if (task.vendorAddress) {
     const vendor = vendors.find((item) => item.address.toLowerCase() === task.vendorAddress.toLowerCase());
     if (vendor) return vendor;
   }
-  return vendors[0] || null;
+  return null;
+}
+
+function selectedComposerVendor(vault = activeVault()) {
+  const address = $("taskVendor")?.value || "";
+  return address ? vendorForAddress(vault, address) : null;
+}
+
+function renderTaskTemplates() {
+  const grid = $("taskTemplateGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  TASK_TEMPLATES.forEach((template, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "task-template";
+    button.dataset.templateId = template.id;
+    button.classList.toggle("active", state.selectedTaskTemplate === template.id);
+
+    const number = document.createElement("span");
+    number.className = "task-template-index";
+    number.textContent = String(index + 1).padStart(2, "0");
+    const copy = document.createElement("span");
+    const label = document.createElement("strong");
+    label.textContent = template.label;
+    const detail = document.createElement("small");
+    detail.textContent = `${template.vendorName} - ${formatUsdc(template.amount)} USDC`;
+    copy.append(label, detail);
+    const outcome = document.createElement("em");
+    outcome.textContent = template.outcome;
+    button.append(number, copy, outcome);
+    grid.appendChild(button);
+  });
+}
+
+function renderTaskVendorSelect() {
+  const select = $("taskVendor");
+  if (!select) return;
+  const vault = activeVault();
+  const vendors = activeVendors(vault);
+  const previous = select.value || activeTask().vendorAddress;
+  select.innerHTML = "";
+
+  if (vendors.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Approve a vendor first";
+    select.appendChild(option);
+    select.disabled = true;
+    return;
+  }
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select an approved vendor";
+  select.appendChild(placeholder);
+  vendors.forEach((vendor) => {
+    const option = document.createElement("option");
+    option.value = vendor.address;
+    option.textContent = `${vendor.name} - ${formatUsdc(vendor.price)} USDC`;
+    select.appendChild(option);
+  });
+  select.disabled = state.busy;
+  select.value = vendors.some((vendor) => vendor.address === previous) ? previous : vendors[0].address;
+}
+
+function renderTaskComposerPolicy() {
+  const panel = $("taskComposerPolicy");
+  if (!panel) return;
+  const vault = activeVault();
+  const vendor = selectedComposerVendor(vault);
+  const amount = Number($("taskAmount")?.value || 0);
+
+  panel.classList.remove("ok", "warn");
+  const copy = panel.querySelector("span:last-child");
+  if (!hasActiveVault() || !vendor || amount <= 0) {
+    if (copy) copy.textContent = "Select a vault and vendor to preview the run policy.";
+    return;
+  }
+
+  const policy = evaluatePaymentPolicy(vault, vendor.address, amount);
+  panel.classList.add(policy.allowed ? "ok" : "warn");
+  if (copy) {
+    copy.textContent = policy.allowed
+      ? `${formatUsdc(amount)} USDC can execute inside the current vault policy.`
+      : `${policy.reason}. The run will require owner review.`;
+  }
 }
 
 function renderTaskRunner() {
-  const task = state.activeTask;
+  const task = activeTask();
   const vault = activeVault();
   const vendor = selectedTaskVendor(vault);
   const timeline = $("taskTimeline");
   const artifact = $("taskArtifact");
   if (!timeline || !artifact) return;
 
+  renderTaskTemplates();
+  renderTaskVendorSelect();
+  renderTaskComposerPolicy();
+
+  const runs = taskRunsForVault(vault);
+  const openRuns = runs.filter((run) => !isTaskTerminal(run));
+  const completedSpend = runs
+    .filter((run) => run.status === "result_ready")
+    .reduce((sum, run) => sum + Number(run.amount || 0), 0);
+  setText("taskRunCount", `${runs.length} total`);
+  setText("taskOpenCount", `${openRuns.length} active`);
+  setText("taskSpentTotal", `${formatUsdc(completedSpend)} USDC`);
+  setText("taskVaultLabel", hasActiveVault() ? vault.agentName : "No vault");
+
   setText("taskStatus", task.status === "idle" ? "Ready for task" : taskStatusLabel(task.status));
-  setText("taskActiveTitle", task.status === "idle" ? "No active task" : task.title);
+  setText("taskActiveTitle", task.status === "idle" ? "No active run" : task.title);
   setText("taskBudgetLabel", `${formatUsdc(task.budget)} USDC task budget`);
   setText("taskVendorLabel", vendor ? vendor.name : "No approved vendor");
   setText("taskSpendLabel", task.amount > 0 ? `${formatUsdc(task.amount)} USDC planned spend` : "No spend prepared");
+  setText("taskRunId", task.status === "idle" ? "Not started" : task.id);
+  setText("taskBudgetRemaining", `${formatUsdc(Math.max(task.budget - task.amount, 0))} USDC`);
 
   const submitButton = $("submitPreparedPayment");
   if (submitButton) {
     submitButton.disabled = task.status !== "ready_to_submit" || state.busy;
-    submitButton.textContent = task.status === "ready_to_submit" ? "Submit prepared payment" : "Prepare onchain submit";
+    submitButton.textContent = task.status === "ready_to_submit"
+      ? task.requiresApproval
+        ? "Submit approval request"
+        : "Submit prepared payment"
+      : "Prepare onchain submit";
   }
+  const stepButton = $("runTaskStep");
+  const autopilotButton = $("runTaskAutopilot");
+  const cancelButton = $("cancelTaskRun");
+  const noRunnableTask = task.status === "idle" || isTaskTerminal(task) || task.status === "approval_needed";
+  if (stepButton) stepButton.disabled = noRunnableTask || state.busy;
+  if (autopilotButton) autopilotButton.disabled = noRunnableTask || state.busy;
+  if (cancelButton) cancelButton.disabled = task.status === "idle" || isTaskTerminal(task) || state.busy;
+  ["copyTaskReceipt", "exportTaskResult"].forEach((id) => {
+    const button = $(id);
+    if (button) button.disabled = !task.result || state.busy;
+  });
 
   timeline.innerHTML = "";
   if (task.timeline.length === 0) {
@@ -803,6 +1006,7 @@ function renderTaskRunner() {
   }
 
   artifact.innerHTML = "";
+  renderTaskHistory();
   if (!task.result) {
     const emptyCopy =
       task.status === "ready_to_submit"
@@ -817,7 +1021,14 @@ function renderTaskRunner() {
 
   const header = document.createElement("div");
   header.className = "artifact-header";
-  header.innerHTML = `<span class="eyebrow">Result artifact</span><strong>${task.result.title}</strong><p>${task.result.summary}</p>`;
+  const headerLabel = document.createElement("span");
+  headerLabel.className = "eyebrow";
+  headerLabel.textContent = "Result artifact";
+  const headerTitle = document.createElement("strong");
+  headerTitle.textContent = task.result.title;
+  const headerSummary = document.createElement("p");
+  headerSummary.textContent = task.result.summary;
+  header.append(headerLabel, headerTitle, headerSummary);
   artifact.appendChild(header);
 
   const receipt = document.createElement("div");
@@ -841,12 +1052,90 @@ function renderTaskRunner() {
 
   const table = document.createElement("div");
   table.className = "artifact-table";
-  task.result.rows.forEach((row) => {
+  (task.result.rows || []).forEach((row) => {
     const item = document.createElement("article");
-    item.innerHTML = `<strong>${row.name}</strong><span>${row.detail}</span><small>${row.source}</small>`;
+    const name = document.createElement("strong");
+    name.textContent = row.name;
+    const detail = document.createElement("span");
+    detail.textContent = row.detail;
+    const source = document.createElement("small");
+    source.textContent = row.source;
+    item.append(name, detail, source);
     table.appendChild(item);
   });
   artifact.appendChild(table);
+}
+
+function taskMatchesFilter(task, filter) {
+  if (filter === "open") return !["result_ready", "approval_needed", "cancelled"].includes(task.status);
+  if (filter === "review") return task.status === "approval_needed" || task.requiresApproval;
+  if (filter === "completed") return task.status === "result_ready";
+  return true;
+}
+
+function renderTaskHistory() {
+  const list = $("taskRunList");
+  if (!list) return;
+  const runs = taskRunsForVault().filter((task) => taskMatchesFilter(task, state.taskFilter));
+  list.innerHTML = "";
+
+  document.querySelectorAll("[data-task-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.taskFilter === state.taskFilter);
+  });
+
+  if (runs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "task-run-empty";
+    empty.textContent = state.taskFilter === "all"
+      ? "No runs yet. Choose a runbook and create the first bounded agent task."
+      : `No ${state.taskFilter} runs in this vault.`;
+    list.appendChild(empty);
+    return;
+  }
+
+  runs.forEach((task) => {
+    const row = document.createElement("article");
+    row.className = `task-run-row${task.id === state.activeTaskId ? " active" : ""}`;
+
+    const identity = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = task.title;
+    const meta = document.createElement("small");
+    meta.textContent = `${task.id} - ${task.createdAt ? new Date(task.createdAt).toLocaleString() : "Local run"}`;
+    identity.append(title, meta);
+
+    const vendor = vendorForAddress(activeVault(), task.vendorAddress);
+    const scope = document.createElement("div");
+    const vendorName = document.createElement("span");
+    vendorName.textContent = vendor?.name || "Vendor pending";
+    const amount = document.createElement("small");
+    amount.textContent = `${formatUsdc(task.amount || task.requestedAmount)} / ${formatUsdc(task.budget)} USDC`;
+    scope.append(vendorName, amount);
+
+    const status = document.createElement("span");
+    status.className = `run-status ${task.status === "result_ready" ? "ok" : task.status === "approval_needed" ? "warn" : ""}`;
+    status.textContent = taskStatusLabel(task.status);
+
+    const actions = document.createElement("div");
+    actions.className = "run-row-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "small-button";
+    open.dataset.taskAction = "open";
+    open.dataset.taskId = task.id;
+    open.textContent = task.id === state.activeTaskId ? "Selected" : "Open";
+    open.disabled = task.id === state.activeTaskId;
+    const rerun = document.createElement("button");
+    rerun.type = "button";
+    rerun.className = "small-button";
+    rerun.dataset.taskAction = "rerun";
+    rerun.dataset.taskId = task.id;
+    rerun.textContent = "Run again";
+    actions.append(open, rerun);
+
+    row.append(identity, scope, status, actions);
+    list.appendChild(row);
+  });
 }
 
 function taskStatusLabel(status) {
@@ -859,6 +1148,7 @@ function taskStatusLabel(status) {
     ready_to_submit: "Ready for onchain submit",
     approval_needed: "Needs approval",
     result_ready: "Completed",
+    cancelled: "Cancelled",
   };
   return labels[status] || status;
 }
@@ -867,68 +1157,88 @@ function startAgentTask(event) {
   event.preventDefault();
   if (!hasActiveVault()) throw new Error("Create or select a vault before starting an agent task");
 
+  const vault = activeVault();
   const title = $("taskTitle")?.value.trim() || DEFAULT_AGENT_TASK.title;
   const brief = $("taskBrief")?.value.trim() || DEFAULT_AGENT_TASK.brief;
   const budget = Number($("taskBudget")?.value || DEFAULT_AGENT_TASK.budget);
+  const requestedAmount = Number($("taskAmount")?.value || 0);
+  const vendorAddress = $("taskVendor")?.value || "";
   if (budget <= 0) throw new Error("Task budget must be greater than zero");
+  if (requestedAmount <= 0) throw new Error("Planned spend must be greater than zero");
+  if (requestedAmount > budget) throw new Error("Planned spend cannot exceed the task budget");
+  if (!vendorAddress) throw new Error("Approve and select a service provider before creating the run");
 
-  state.activeTask = normalizeTask({
+  const task = normalizeTask({
     id: `task-${Date.now().toString(36)}`,
     status: "created",
+    templateId: state.selectedTaskTemplate || "custom",
     title,
     brief,
     budget,
-    vendorAddress: "",
+    vendorAddress,
+    requestedAmount,
     amount: 0,
+    vaultId: vault.id,
+    vaultAddress: vault.address || "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    timeline: [taskStep("Task created", `${title}. Budget: ${formatUsdc(budget)} USDC.`)],
+    timeline: [
+      taskStep(
+        "Run created",
+        `${title}. Budget: ${formatUsdc(budget)} USDC. Planned spend: ${formatUsdc(requestedAmount)} USDC.`,
+      ),
+    ],
     result: null,
   });
+  state.taskRuns = [task, ...state.taskRuns.filter((item) => item.id !== task.id)].slice(0, 50);
+  state.activeTaskId = task.id;
 
   addActivity({
-    title: "Agent task created",
-    detail: `${title}. Budget ${formatUsdc(budget)} USDC`,
+    title: "Agent run created",
+    detail: `${title}. Budget ${formatUsdc(budget)} USDC. Run ${task.id}`,
     hash: "task",
     state: "ok",
   });
+  saveState();
+  render();
   document.querySelector("#tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function runTaskStep() {
   const vault = activeVault();
   if (!hasActiveVault()) throw new Error("Create or select a vault before running a task");
-  if (state.activeTask.status === "idle") {
-    startAgentTask({ preventDefault() {} });
-    return;
-  }
-
-  const task = state.activeTask;
+  const task = activeTask();
+  if (task.status === "idle") throw new Error("Create a run before asking the agent to continue");
   const vendor = selectedTaskVendor(vault);
-  if (!vendor && ["budget_checked", "vendor_selected", "policy_checked"].includes(task.status)) {
-    throw new Error("Approve at least one vendor before the agent can continue the task");
-  }
+  if (!vendor) throw new Error("The selected service provider is no longer approved for this vault");
 
   if (task.status === "created") {
     task.status = "budget_checked";
+    const withinAvailable = task.requestedAmount <= Number(vault.availableToday || 0) && task.requestedAmount <= Number(vault.balance || 0);
     task.timeline.push(
       taskStep(
-        "Agent checked budget",
-        `${vault.agentName} can use up to ${formatUsdc(task.budget)} USDC for this task. Vault available today: ${formatUsdc(vault.availableToday)} USDC.`,
+        withinAvailable ? "Budget reserved" : "Budget needs review",
+        `${formatUsdc(task.requestedAmount)} USDC planned from a ${formatUsdc(task.budget)} USDC run budget. Vault available today: ${formatUsdc(vault.availableToday)} USDC.`,
+        withinAvailable ? "ok" : "warn",
       ),
     );
   } else if (task.status === "budget_checked") {
-    const amount = Math.min(Number(vendor.price || 0.42), task.budget);
+    const amount = Math.min(Number(task.requestedAmount || vendor.price || 0.42), task.budget);
     task.status = "vendor_selected";
-    task.vendorAddress = vendor.address;
     task.amount = amount;
     setPaymentJob(vendor);
     setValue("paymentAmount", amount);
     setValue("paymentReason", `Task ${task.id}: ${task.brief}`);
-    task.timeline.push(taskStep("Vendor selected", `${vendor.name} selected for ${formatUsdc(amount)} USDC. Expected result: ${vendor.result}`));
+    task.timeline.push(
+      taskStep(
+        "Vendor locked",
+        `${vendor.name} selected for ${formatUsdc(amount)} USDC. Expected result: ${vendor.result}`,
+      ),
+    );
   } else if (task.status === "vendor_selected") {
     const policy = evaluatePaymentPolicy(vault, vendor.address, task.amount);
     task.status = "policy_checked";
+    task.requiresApproval = !policy.allowed;
     task.timeline.push(
       taskStep(
         policy.allowed ? "Policy passed" : "Policy needs owner review",
@@ -953,24 +1263,32 @@ function runTaskStep() {
       } else {
         vault.balance = Math.max(vault.balance - task.amount, 0);
         vault.spentToday += task.amount;
+        vault.availableToday = Math.max(vault.dailyLimit - vault.spentToday, 0);
+        task.resultPolicy = "Allowed in preview";
         task.result = buildTaskResult(task, vendor);
+        task.completedAt = new Date().toISOString();
         task.timeline.push(taskStep("Result returned", `${vendor.name} returned a structured result artifact.`, "ok"));
         addActivity({
-          title: "Agent task completed",
-          detail: `${task.title}: ${vendor.name} returned a result after ${formatUsdc(task.amount)} USDC spend`,
+          title: "Agent run completed",
+          detail: `${task.title}: ${vendor.name} returned a result after ${formatUsdc(task.amount)} USDC spend. Run ${task.id}`,
           hash: "task",
           state: "ok",
         });
       }
     } else {
-      task.status = "approval_needed";
-      task.timeline.push(
-        taskStep(
-          "Owner approval required",
-          "The task is paused until the owner approves the risky spend in the approval inbox.",
-          "warn",
-        ),
-      );
+      task.requiresApproval = true;
+      if (isOnchainVault(vault)) {
+        task.status = "ready_to_submit";
+        task.timeline.push(
+          taskStep(
+            "Ready to request approval",
+            "The payment is outside automatic policy. Submit it to create the onchain owner approval request.",
+            "warn",
+          ),
+        );
+      } else {
+        queuePreviewTaskApproval(task, vendor, vault, policy.reason);
+      }
     }
   } else if (task.status === "ready_to_submit") {
     focusPreparedPayment();
@@ -985,17 +1303,69 @@ function runTaskStep() {
   render();
 }
 
+function queuePreviewTaskApproval(task, vendor, vault, policyReason) {
+  const existing = (vault.pendingRequests || []).find((request) => request.taskId === task.id && request.status === 1);
+  if (!existing) {
+    const requestId = String((vault.pendingRequests || []).length + 1);
+    vault.pendingRequests.push(
+      normalizeRequest({
+        id: requestId,
+        recipient: vendor.address,
+        amount: task.amount,
+        reason: task.brief,
+        policyReason,
+        vendorName: vendor.name,
+        taskId: task.id,
+        status: 1,
+        createdAt: Math.floor(Date.now() / 1000),
+      }),
+    );
+  }
+  task.status = "approval_needed";
+  task.timeline.push(
+    taskStep(
+      "Owner approval required",
+      "The run is paused in the approval inbox because the requested spend is outside automatic policy.",
+      "warn",
+    ),
+  );
+  addActivity({
+    title: "Run moved to approval",
+    detail: `${task.title}: ${formatUsdc(task.amount)} USDC to ${vendor.name}. Run ${task.id}`,
+    hash: "request",
+    state: "warn",
+  });
+}
+
 function runTaskAutopilot() {
-  if (state.activeTask.status === "idle") startAgentTask({ preventDefault() {} });
+  if (activeTask().status === "idle") throw new Error("Create a run before starting the preview loop");
 
   const limit = 5;
-  for (let index = 0; index < limit && !["result_ready", "ready_to_submit", "approval_needed"].includes(state.activeTask.status); index += 1) {
+  for (let index = 0; index < limit && !["result_ready", "ready_to_submit", "approval_needed", "cancelled"].includes(activeTask().status); index += 1) {
     runTaskStep();
   }
 }
 
 function resetAgentTask() {
-  state.activeTask = normalizeTask(DEFAULT_AGENT_TASK);
+  state.activeTaskId = "";
+  state.selectedTaskTemplate = DEFAULT_AGENT_TASK.templateId;
+  applyTaskTemplate(DEFAULT_AGENT_TASK.templateId);
+  saveState();
+  render();
+}
+
+function cancelTaskRun() {
+  const task = activeTask();
+  if (task.status === "idle" || isTaskTerminal(task)) return;
+  task.status = "cancelled";
+  task.updatedAt = new Date().toISOString();
+  task.timeline.push(taskStep("Run cancelled", "The operator stopped this run before settlement.", "warn"));
+  addActivity({
+    title: "Agent run cancelled",
+    detail: `${task.title}. Run ${task.id}`,
+    hash: "task",
+    state: "warn",
+  });
   saveState();
   render();
 }
@@ -1010,19 +1380,37 @@ function buildTaskResult(task, vendor) {
 
   return {
     title: `${task.title} result`,
-    summary: `${vendor.name} returned a structured preview artifact for the task. The receipt mirrors the metadata that an onchain payment can link back to.`,
+    summary: `${vendor.name} returned a structured artifact for this run. The receipt keeps the result connected to the payment metadata.`,
     receipt: {
       vendor: vendor.name,
       spend: `${formatUsdc(task.amount)} USDC`,
       policy: task.resultPolicy || "Allowed in preview",
       metadataHash: ethers.id(JSON.stringify(metadataPayload)),
     },
-    rows: [
-      { name: "Northstar Pay", detail: "Berlin fintech infrastructure lead. Score 91.", source: "verified-data.example/northstar" },
-      { name: "LedgerFlow", detail: "Hamburg B2B payments lead. Score 87.", source: "verified-data.example/ledgerflow" },
-      { name: "KreditGrid", detail: "Munich credit automation lead. Score 84.", source: "verified-data.example/kreditgrid" },
-    ],
+    rows: taskResultRows(task),
   };
+}
+
+function taskResultRows(task) {
+  if (task.templateId === "vendor-risk") {
+    return [
+      { name: "Sanctions screening", detail: "No direct or indirect sanctions match detected.", source: "kyc-risk.example/screening" },
+      { name: "Reputation", detail: "Provider history is consistent with low dispute risk.", source: "kyc-risk.example/reputation" },
+      { name: "Recommendation", detail: "Allow with the current per-action limit.", source: "signed-review:0x41f2" },
+    ];
+  }
+  if (task.templateId === "dataset-qa") {
+    return [
+      { name: "Schema", detail: "12 required fields present; no breaking type drift.", source: "dataset-receipt/schema" },
+      { name: "Freshness", detail: "Newest row is 4 hours old; freshness target passed.", source: "dataset-receipt/freshness" },
+      { name: "Quality", detail: "98.7% complete rows with 3 duplicate records flagged.", source: "dataset-receipt/quality" },
+    ];
+  }
+  return [
+    { name: "Northstar Pay", detail: "Berlin fintech infrastructure lead. Score 91.", source: "verified-data.example/northstar" },
+    { name: "LedgerFlow", detail: "Hamburg B2B payments lead. Score 87.", source: "verified-data.example/ledgerflow" },
+    { name: "KreditGrid", detail: "Munich credit automation lead. Score 84.", source: "verified-data.example/kreditgrid" },
+  ];
 }
 
 function focusPreparedPayment() {
@@ -1035,10 +1423,111 @@ function focusPreparedPayment() {
   $("paymentForm")?.querySelector("button[type='submit']")?.focus();
 }
 
-function applyTaskTemplate() {
-  setValue("taskTitle", DEFAULT_AGENT_TASK.title);
-  setValue("taskBrief", DEFAULT_AGENT_TASK.brief);
-  setValue("taskBudget", DEFAULT_AGENT_TASK.budget);
+function applyTaskTemplate(templateId = DEFAULT_AGENT_TASK.templateId) {
+  const template = taskTemplate(templateId);
+  state.selectedTaskTemplate = template.id;
+  setValue("taskTitle", template.title);
+  setValue("taskBrief", template.brief);
+  setValue("taskBudget", template.budget);
+  setValue("taskAmount", template.amount);
+
+  renderTaskVendorSelect();
+  const vendor = activeVendors().find((item) => item.name === template.vendorName);
+  setValue("taskVendor", vendor?.address || "");
+  renderTaskTemplates();
+  renderTaskComposerPolicy();
+  saveState();
+}
+
+function applyTaskToComposer(task) {
+  state.selectedTaskTemplate = task.templateId || "custom";
+  setValue("taskTitle", task.title);
+  setValue("taskBrief", task.brief);
+  setValue("taskBudget", task.budget);
+  setValue("taskAmount", task.requestedAmount || task.amount);
+  renderTaskVendorSelect();
+  if (task.vendorAddress) setValue("taskVendor", task.vendorAddress);
+  renderTaskComposerPolicy();
+}
+
+function handleTaskTemplateClick(event) {
+  const button = event.target.closest("[data-template-id]");
+  if (!button) return;
+  applyTaskTemplate(button.dataset.templateId);
+}
+
+function handleTaskFilter(event) {
+  const button = event.target.closest("[data-task-filter]");
+  if (!button) return;
+  state.taskFilter = button.dataset.taskFilter;
+  saveState();
+  renderTaskHistory();
+}
+
+function handleTaskRunAction(event) {
+  const button = event.target.closest("[data-task-action]");
+  if (!button) return;
+  const task = state.taskRuns.find((item) => item.id === button.dataset.taskId);
+  if (!task) return;
+
+  if (button.dataset.taskAction === "open") {
+    state.activeTaskId = task.id;
+    applyTaskToComposer(task);
+    saveState();
+    render();
+    document.querySelector("#tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  if (button.dataset.taskAction === "rerun") {
+    applyTaskToComposer(task);
+    startAgentTask({ preventDefault() {} });
+  }
+}
+
+async function copyTaskReceipt() {
+  const task = activeTask();
+  if (!task.result) throw new Error("Complete a run before copying its receipt");
+  if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser");
+  await navigator.clipboard.writeText(
+    JSON.stringify(
+      {
+        runId: task.id,
+        status: taskStatusLabel(task.status),
+        vault: task.vaultAddress || task.vaultId,
+        ...task.result.receipt,
+      },
+      null,
+      2,
+    ),
+  );
+  setTransactionProgress("confirmed", "Receipt copied", `${task.id} is ready to paste into a report or agent log.`);
+}
+
+function exportTaskResult() {
+  const task = activeTask();
+  if (!task.result) throw new Error("Complete a run before exporting its result");
+  const payload = {
+    version: "0.6",
+    runId: task.id,
+    title: task.title,
+    brief: task.brief,
+    status: taskStatusLabel(task.status),
+    budgetUsdc: task.budget,
+    spendUsdc: task.amount,
+    vault: task.vaultAddress || task.vaultId,
+    createdAt: task.createdAt,
+    completedAt: task.completedAt,
+    timeline: task.timeline,
+    result: task.result,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${task.id}.json`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function renderActivity() {
@@ -1466,7 +1955,8 @@ function renderLaunchChecklist(vault, onchain) {
   const signerReady = ethers.isAddress(vault.agentSigner) && vault.agentSigner !== ethers.ZeroAddress;
   const policyReady = vault.recipients.length > 0 && vault.maxSpend > 0 && vault.dailyLimit > 0;
   const vendorJobReady = Boolean($("paymentRecipient")?.value) && Number($("paymentAmount")?.value || 0) > 0;
-  const taskReady = ["ready_to_submit", "approval_needed", "result_ready"].includes(state.activeTask.status);
+  const task = activeTask();
+  const taskReady = ["ready_to_submit", "approval_needed", "result_ready"].includes(task.status);
   const setupReady = state.agentSetup.envCopied && state.agentSetup.mcpCopied;
   const checks = {
     wallet: Boolean(state.connectedAccount),
@@ -1488,7 +1978,7 @@ function renderLaunchChecklist(vault, onchain) {
   setText("checkFunded", checks.funded ? `${formatUsdc(vault.balance)} USDC` : "Deposit USDC");
   setText("checkPolicy", checks.policy ? `${vault.recipients.length} vendor${vault.recipients.length === 1 ? "" : "s"}` : "Add vendor and limits");
   setText("checkVendor", checks.vendor ? "Job prepared" : "Pick a vendor");
-  setText("checkTask", checks.task ? taskStatusLabel(state.activeTask.status) : "Run task");
+  setText("checkTask", checks.task ? taskStatusLabel(task.status) : "Run task");
   setText("checkAgent", checks.agent ? "Ready to verify" : "Copy configuration");
 
   const bar = $("launchProgressBar");
@@ -2314,11 +2804,14 @@ async function initiatePayment(event) {
     await refreshOnchainVaults();
 
     if (outcome.executed) {
-      if (state.activeTask.status === "ready_to_submit") {
-        state.activeTask.status = "result_ready";
-        state.activeTask.resultPolicy = "Executed on Arc";
-        state.activeTask.result = buildTaskResult(state.activeTask, vendor);
-        state.activeTask.timeline.push(taskStep("Arc transaction confirmed", `${vendor.name} received ${formatUsdc(amount)} USDC on Arc Testnet.`, "ok"));
+      const task = activeTask();
+      if (task.status === "ready_to_submit") {
+        task.status = "result_ready";
+        task.resultPolicy = "Executed on Arc";
+        task.txHash = tx.hash;
+        task.completedAt = new Date().toISOString();
+        task.result = buildTaskResult(task, vendor);
+        task.timeline.push(taskStep("Arc transaction confirmed", `${vendor.name} received ${formatUsdc(amount)} USDC on Arc Testnet.`, "ok"));
       }
       setText("decisionTitle", "Executed");
       setText("decisionText", `${vendor.name} was paid. Result expected: ${vendor.result}`);
@@ -2338,9 +2831,12 @@ async function initiatePayment(event) {
         ? `Request #${outcome.requestId} was queued onchain for ${vendor.name}.`
         : `${vendor.name} payment was queued for approval.`,
     );
-    if (state.activeTask.status === "ready_to_submit") {
-      state.activeTask.status = "approval_needed";
-      state.activeTask.timeline.push(taskStep("Queued for owner approval", `${vendor.name} spend is now an onchain approval request.`, "warn"));
+    const task = activeTask();
+    if (task.status === "ready_to_submit") {
+      task.status = "approval_needed";
+      task.requiresApproval = true;
+      task.txHash = tx.hash;
+      task.timeline.push(taskStep("Queued for owner approval", `${vendor.name} spend is now an onchain approval request.`, "warn"));
     }
     addActivity({
       title: "Approval requested",
@@ -2587,6 +3083,7 @@ async function executeRequestAction(action, requestId) {
   const vault = activeVault();
   const request = (vault.pendingRequests || []).find((item) => String(item.id) === String(requestId));
   if (!request) throw new Error(`Request #${requestId} was not found`);
+  const linkedTask = taskForPaymentRequest(request);
 
   if (isOnchainVault(vault)) {
     await ensureWallet();
@@ -2607,6 +3104,7 @@ async function executeRequestAction(action, requestId) {
     });
 
     await confirmTransaction(tx, `${capitalize(action)} request #${requestId}`);
+    settleTaskFromApproval(linkedTask, request, action, tx.hash);
     await refreshOnchainVaults();
 
     addActivity({
@@ -2622,10 +3120,12 @@ async function executeRequestAction(action, requestId) {
     request.status = 4;
     vault.balance = Math.max(vault.balance - request.amount, 0);
     vault.spentToday += request.amount;
+    vault.availableToday = Math.max(vault.dailyLimit - vault.spentToday, 0);
   }
   if (action === "reject") request.status = 3;
   if (action === "cancel") request.status = 5;
   request.decidedAt = Math.floor(Date.now() / 1000);
+  settleTaskFromApproval(linkedTask, request, action, "local");
 
   addActivity({
     title: requestActionTitle(action),
@@ -2636,6 +3136,43 @@ async function executeRequestAction(action, requestId) {
     hash: "local",
     state: action === "reject" || action === "cancel" ? "risk" : "ok",
   });
+}
+
+function taskForPaymentRequest(request) {
+  if (request.taskId) return state.taskRuns.find((task) => task.id === request.taskId) || null;
+  return state.taskRuns.find(
+    (task) =>
+      task.status === "approval_needed" &&
+      String(task.vendorAddress || "").toLowerCase() === String(request.recipient || "").toLowerCase() &&
+      Math.abs(Number(task.amount) - Number(request.amount)) < 0.000001,
+  ) || null;
+}
+
+function settleTaskFromApproval(task, request, action, txHash) {
+  if (!task) return;
+  const vendor = vendorForAddress(activeVault(), request.recipient);
+  task.updatedAt = new Date().toISOString();
+  task.txHash = txHash;
+
+  if (action === "approve") {
+    task.status = "result_ready";
+    task.resultPolicy = txHash === "local" ? "Owner approved in preview" : "Owner approved on Arc";
+    task.completedAt = task.updatedAt;
+    task.result = buildTaskResult(task, vendor);
+    task.timeline.push(
+      taskStep("Owner approved spend", `${vendor.name} received ${formatUsdc(request.amount)} USDC and returned the run artifact.`, "ok"),
+    );
+    return;
+  }
+
+  task.status = "cancelled";
+  task.timeline.push(
+    taskStep(
+      action === "reject" ? "Owner rejected spend" : "Approval request cancelled",
+      `The run stopped before ${vendor.name} was paid.`,
+      "warn",
+    ),
+  );
 }
 
 function requestActionTitle(action) {
@@ -2736,6 +3273,7 @@ function selectVault(event) {
   if (!button) return;
 
   state.activeVaultId = button.dataset.vaultId;
+  state.activeTaskId = taskRunsForVault(activeVault())[0]?.id || "";
   state.fullLogOpen = false;
   state.logPage = 1;
   saveState();
@@ -2747,6 +3285,30 @@ function selectVault(event) {
 function bind(id, eventName, handler) {
   const element = $(id);
   if (element) element.addEventListener(eventName, handler);
+}
+
+let navUpdateFrame = 0;
+
+function updateActiveNavigation() {
+  navUpdateFrame = 0;
+  const links = [...document.querySelectorAll(".nav a")];
+  const targets = new Set(links.map((link) => link.getAttribute("href")?.slice(1)).filter(Boolean));
+  const sections = [...document.querySelectorAll("main section[id]")].filter((section) => targets.has(section.id));
+  let activeId = window.location.hash || "#vault";
+  sections.forEach((section) => {
+    if (section.getBoundingClientRect().top <= 190) activeId = `#${section.id}`;
+  });
+  links.forEach((link) => {
+    const active = link.getAttribute("href") === activeId;
+    link.classList.toggle("active", active);
+    if (active) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  });
+}
+
+function queueNavigationUpdate() {
+  if (navUpdateFrame) return;
+  navUpdateFrame = window.requestAnimationFrame(updateActiveNavigation);
 }
 
 bind("connectWallet", "click", () => runAction(connectWallet));
@@ -2763,11 +3325,16 @@ bind("dismissTransaction", "click", clearTransactionProgress);
 bind("vaultForm", "submit", (event) => runAction(() => updateVault(event)));
 bind("policyForm", "submit", (event) => runAction(() => updatePolicy(event)));
 bind("taskForm", "submit", (event) => runAction(() => startAgentTask(event)));
-bind("applyTaskTemplate", "click", applyTaskTemplate);
 bind("resetAgentTask", "click", resetAgentTask);
 bind("runTaskStep", "click", () => runAction(runTaskStep));
 bind("runTaskAutopilot", "click", () => runAction(runTaskAutopilot));
 bind("submitPreparedPayment", "click", focusPreparedPayment);
+bind("cancelTaskRun", "click", cancelTaskRun);
+bind("taskTemplateGrid", "click", handleTaskTemplateClick);
+bind("taskFilters", "click", handleTaskFilter);
+bind("taskRunList", "click", handleTaskRunAction);
+bind("copyTaskReceipt", "click", () => runAction(copyTaskReceipt));
+bind("exportTaskResult", "click", () => runAction(exportTaskResult));
 bind("paymentForm", "submit", (event) => runAction(() => initiatePayment(event)));
 bind("runRiskyDemo", "click", () => runAction(runRiskyDemo));
 bind("depositFunds", "click", () => runAction(depositFunds));
@@ -2799,8 +3366,14 @@ document.addEventListener("click", applyDepositPreset);
   const element = $(id);
   if (element) element.addEventListener("input", renderPaymentPreview);
 });
+["taskVendor", "taskAmount", "taskBudget"].forEach((id) => {
+  const element = $(id);
+  if (element) element.addEventListener("input", renderTaskComposerPolicy);
+});
 window.addEventListener("resize", () => updateTourPosition(false));
 window.addEventListener("scroll", () => updateTourPosition(false), true);
+window.addEventListener("scroll", queueNavigationUpdate, { passive: true });
+window.addEventListener("hashchange", queueNavigationUpdate);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.confirm) closeConfirm();
   if (event.key === "Escape" && state.tourOpen) closeTour(true);
@@ -2817,6 +3390,7 @@ window.ethereum?.on?.("accountsChanged", (accounts) => {
 });
 
 render();
+queueNavigationUpdate();
 if (!state.tourSeen && $("tourOverlay")) {
   window.setTimeout(() => openTour(0), 450);
 }
