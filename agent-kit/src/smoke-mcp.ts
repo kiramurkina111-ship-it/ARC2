@@ -17,7 +17,7 @@ const transport = new StdioClientTransport({
   args: [serverPath],
   env
 });
-const client = new Client({ name: "agent-vault-smoke-test", version: "0.3.0" });
+const client = new Client({ name: "paybound-smoke-test", version: "0.6.0" });
 
 try {
   await client.connect(transport);

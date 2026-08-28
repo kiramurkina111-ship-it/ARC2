@@ -4,14 +4,16 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import * as z from "zod/v4";
 import { AgentVaultClient } from "./client.js";
 import { loadAgentKitConfig } from "./config.js";
+import { AgentTaskRunner } from "./task-runner.js";
 
 loadEnv({ quiet: true });
 
 const config = loadAgentKitConfig();
 const vault = new AgentVaultClient(config);
+const taskRunner = new AgentTaskRunner(vault);
 const server = new McpServer({
   name: "paybound",
-  version: "0.3.0"
+  version: "0.6.0"
 });
 
 server.registerTool(
@@ -35,6 +37,25 @@ server.registerTool(
     }
   },
   async ({ recipient }) => runTool(() => vault.checkRecipient(recipient))
+);
+
+server.registerTool(
+  "plan_task_payment",
+  {
+    title: "Plan bounded task spend",
+    description:
+      "Preview a complete Paybound task run before spending. Checks the task budget, signer, vault state, recipient policy, action limit, daily budget, and balance.",
+    inputSchema: {
+      taskId: z.string().min(1).describe("Stable external task or run identifier"),
+      title: z.string().min(1).describe("Human-readable task title"),
+      brief: z.string().min(3).describe("What the agent is expected to deliver"),
+      budgetUsdc: z.string().describe("Maximum USDC budget for the full task"),
+      recipient: z.string().describe("EVM address of the selected service provider"),
+      amountUsdc: z.string().describe("USDC planned for this vendor action"),
+      service: z.string().optional().describe("Optional service or vendor name")
+    }
+  },
+  async input => runTool(() => taskRunner.plan(input))
 );
 
 server.registerTool(
